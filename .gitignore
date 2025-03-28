@@ -1,0 +1,32 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+.RDataTmp
+
+# R Environment Variables
+.Renviron
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Specific R and RStudio files
+.Rproj.user/
+*.Rproj
+.httr-oauth
+
+# Specific macOS and Windows files
+.DS_Store
+Thumbs.db
+
+# Data files (if you want to exclude large data files)
+# *.csv
+# *.xlsx
+
+# Logs and databases
+*.log
+*.sqlite
