@@ -5,7 +5,7 @@
 
 A comprehensive Shiny app designed to analyze nutrient data, assess impairments, and support Total Maximum Daily Load (TMDL) development for Florida lakes. This tool integrates data extraction, statistical analysis, visualization, and geospatial features to assist water quality managers and researchers.
 
-![Dashboard Screenshot](https://raw.githubusercontent.com/zaimoua/LakeNutrientAnalyzer/main/www/dashboard_screenshot.png)
+![Dashboard Screenshot](www/dashboard_screenshot.png)
 
 ## Features
 
@@ -176,15 +176,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This app was developed by Zaim Ouazzani, an employee of the Florida Department of Environmental Protection (FDEP). It is not an official FDEP product and does not represent the agency's views, tools, or endorsement. The app uses publicly available IWR data transformed independently for research and educational purposes. For official FDEP tools or data, contact the agency directly.
 
-## Contact
-
-For support or feedback, email: lna.tmdl@gmail.com
 
 ## Acknowledgments
 
 - Data from Florida DEP IWR database
 - Built with Shiny and R community packages
-- Feedback and testing from water quality professionals
 
 ---
 
