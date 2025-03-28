@@ -110,7 +110,7 @@ The Lake Nutrient Analyser is available on GitHub at [https://github.com/zaimoua
 - Approximately 500MB disk space for the application and database
 - Installation time: approximately 5-10 minutes depending on existing R package installations
 
-An online demo version is available at [https://tmdl.shinyapps.io/Florida_Lake_Nutrient_Analyzer/](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/) for users who wish to explore the application before installation.
+An online demo version is available at [https://tmdl.shinyapps.io/LakeNutrientAnalyzer/](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/) for users who wish to explore the application before installation.
 
 ## Data Preparation
 
