@@ -2337,7 +2337,9 @@ safe_display <- function(value, default = "N/A", digits = 3) {
 
 # Helper function to calculate TMDL for a single dataset
 calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutrients, 
-                                  lake_criteria, use_paleo_tp, tp_paleo) {
+                                  lake_criteria, use_paleo_tp, tp_paleo, 
+                                  reduction_scenario = "both", 
+                                  custom_tn_reduction = 0, custom_tp_reduction = 0) {
   # Validate inputs
   if (is.null(data) || nrow(data) == 0) {
     stop("No data available for TMDL calculation")
@@ -2351,12 +2353,24 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
     stop("No impaired nutrients selected")
   }
   
+  # Enhanced error handling: Check if impaired nutrients are in the model
+  coefficients <- reg_results$summary
+  tn_coeff <- ifelse("TN" %in% coefficients$term, 
+                     as.numeric(coefficients$estimate[coefficients$term == "TN"]), 0)
+  tp_coeff <- ifelse("TP" %in% coefficients$term, 
+                     as.numeric(coefficients$estimate[coefficients$term == "TP"]), 0)
+  if (("TN" %in% impaired_nutrients && tn_coeff == 0) || 
+      ("TP" %in% impaired_nutrients && tp_coeff == 0)) {
+    stop("Selected impaired nutrient(s) not in regression model.")
+  }
+  
   # Print diagnostics
   cat("TMDL calculation inputs:\n")
   cat("- Data rows:", nrow(data), "\n")
   cat("- Impaired nutrients:", paste(impaired_nutrients, collapse=", "), "\n")
   cat("- CHLAC target:", chlac_target, "\n")
   cat("- Lake criteria:", paste(names(lake_criteria), lake_criteria, sep="=", collapse=", "), "\n")
+  cat("- Reduction scenario:", reduction_scenario, "\n")
   
   # Ensure numeric columns
   data$TN <- as.numeric(data$TN)
@@ -2369,35 +2383,8 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
   }
   
   # Extract coefficients safely
-  coefficients <- reg_results$summary
-  
-  # Check if the required columns exist in the regression results
-  if (!all(c("term", "estimate") %in% colnames(coefficients))) {
-    print(colnames(coefficients))
-    stop("Required columns not found in regression results")
-  }
-  
-  # Safe extraction of coefficients with default 0 values and error handling
-  tn_coeff <- tryCatch({
-    as.numeric(coefficients$estimate[coefficients$term == "TN"])
-  }, error = function(e) {
-    warning("Error extracting TN coefficient: ", e$message)
-    0
-  })
-  
-  tp_coeff <- tryCatch({
-    as.numeric(coefficients$estimate[coefficients$term == "TP"])
-  }, error = function(e) {
-    warning("Error extracting TP coefficient: ", e$message)
-    0
-  })
-  
-  intercept <- tryCatch({
-    as.numeric(coefficients$estimate[coefficients$term == "(Intercept)"])
-  }, error = function(e) {
-    warning("Error extracting intercept: ", e$message)
-    0
-  })
+  intercept <- ifelse("(Intercept)" %in% coefficients$term, 
+                      as.numeric(coefficients$estimate[coefficients$term == "(Intercept)"]), 0)
   
   # Handle empty coefficient values
   if (length(tn_coeff) == 0) tn_coeff <- 0
@@ -2413,19 +2400,22 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
     stop("No valid TN or TP coefficients found in regression results.")
   }
   
-  # Calculate target concentrations
+  # Get current concentrations
+  current_tn <- max(data$TN, na.rm = TRUE)
+  current_tp <- max(data$TP, na.rm = TRUE)
+  cat("Current TN:", current_tn, "Current TP:", current_tp, "\n")
+  
+  # Calculate target concentrations based on reduction scenario
   target_conc <- list()
   max_agm <- list()
   percent_reduction <- list()
+  capped <- list(TN = FALSE, TP = FALSE)  # Track if values were capped
+  min_conc <- 0.01  # Minimum concentration in mg/L
   
-  if (length(impaired_nutrients) == 2 && tn_coeff != 0 && tp_coeff != 0) {
-    # Both TN and TP impaired
-    cat("Calculating for both TN and TP\n")
+  if (reduction_scenario == "both" && length(impaired_nutrients) == 2 && tn_coeff != 0 && tp_coeff != 0) {
+    # Both TN and TP impaired - reduce proportionally
+    cat("Calculating for both TN and TP - proportional reduction\n")
     ratio <- tn_coeff / tp_coeff
-    current_tn <- max(data$TN, na.rm = TRUE)
-    current_tp <- max(data$TP, na.rm = TRUE)
-    
-    cat("Current TN:", current_tn, "Current TP:", current_tp, "\n")
     
     x <- (tn_coeff * current_tn + tp_coeff * current_tp + intercept - chlac_target) / 
       (tn_coeff * ratio + tp_coeff)
@@ -2434,29 +2424,63 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
     target_conc$TP <- current_tp - x
     
     cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
-  } else if ("TN" %in% impaired_nutrients && tn_coeff != 0) {
-    # Only TN impaired
+  } else if (reduction_scenario == "tn_only" || (reduction_scenario == "both" && 
+                                                 ("TN" %in% impaired_nutrients && !("TP" %in% impaired_nutrients)))) {
+    # Only TN impaired or tn_only scenario
     cat("Calculating for TN only\n")
     tp_value <- ifelse(use_paleo_tp, as.numeric(tp_paleo), as.numeric(lake_criteria$TP))
     cat("Using TP value:", tp_value, "\n")
     
     target_conc$TN <- (chlac_target - intercept - (tp_coeff * tp_value)) / tn_coeff
-    cat("Target TN:", target_conc$TN, "\n")
-  } else if ("TP" %in% impaired_nutrients && tp_coeff != 0) {
-    # Only TP impaired
+    target_conc$TP <- tp_value
+    cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
+  } else if (reduction_scenario == "tp_only" || (reduction_scenario == "both" && 
+                                                 ("TP" %in% impaired_nutrients && !("TN" %in% impaired_nutrients)))) {
+    # Only TP impaired or tp_only scenario
     cat("Calculating for TP only\n")
-    target_conc$TP <- (chlac_target - intercept - (tn_coeff * as.numeric(lake_criteria$TN))) / tp_coeff
-    cat("Target TP:", target_conc$TP, "\n")
-  } else {
-    stop("Selected impaired nutrient(s) not supported by regression model.")
+    tn_value <- as.numeric(lake_criteria$TN)
+    target_conc$TP <- (chlac_target - intercept - (tn_coeff * tn_value)) / tp_coeff
+    target_conc$TN <- tn_value
+    cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
+  } else if (reduction_scenario == "custom") {
+    # Apply user-specified custom reductions
+    cat("Calculating with custom reductions\n")
+    target_conc$TN <- current_tn * (1 - custom_tn_reduction / 100)
+    target_conc$TP <- current_tp * (1 - custom_tp_reduction / 100)
+    
+    # Check if CHLAC target is met with custom reductions
+    predicted_chlac <- intercept + (tn_coeff * target_conc$TN) + (tp_coeff * target_conc$TP)
+    cat("Custom reductions result in predicted CHLAC:", predicted_chlac, "\n")
+    if (predicted_chlac > chlac_target) {
+      warning("Custom reductions do not meet the CHLAC target of ", chlac_target, 
+              ". Predicted CHLAC is ", round(predicted_chlac, 2), ".")
+    }
+  }
+  
+  # Cap minimum values to ensure physically realistic results
+  if (!is.null(target_conc$TN)) {
+    if (target_conc$TN < min_conc) {
+      cat("TN target capped at minimum value:", min_conc, "\n")
+      target_conc$TN <- min_conc
+      capped$TN <- TRUE
+    }
+  }
+  if (!is.null(target_conc$TP)) {
+    if (target_conc$TP < min_conc) {
+      cat("TP target capped at minimum value:", min_conc, "\n")
+      target_conc$TP <- min_conc
+      capped$TP <- TRUE
+    }
   }
   
   # Calculate max AGM and percent reduction
-  for (nutrient in impaired_nutrients) {
+  for (nutrient in c("TN", "TP")) {
     max_agm[[nutrient]] <- max(data[[nutrient]], na.rm = TRUE)
     if (!is.null(target_conc[[nutrient]])) {
       percent_reduction[[nutrient]] <- ((max_agm[[nutrient]] - target_conc[[nutrient]]) / 
                                           max_agm[[nutrient]]) * 100
+      # Cap percent reduction at 0-100%
+      percent_reduction[[nutrient]] <- max(0, min(100, percent_reduction[[nutrient]]))
     } else {
       warning("Target concentration for ", nutrient, " is NULL")
     }
@@ -2470,10 +2494,10 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
   }
   equation <- paste0(equation, sprintf(" + %.3f", intercept))
   
-  # Confidence interval prediction
+  # Prediction interval
   newdata <- data.frame(
-    TN = ifelse("TN" %in% impaired_nutrients, target_conc$TN, lake_criteria$TN),
-    TP = ifelse("TP" %in% impaired_nutrients, target_conc$TP, 
+    TN = ifelse(!is.null(target_conc$TN), target_conc$TN, lake_criteria$TN),
+    TP = ifelse(!is.null(target_conc$TP), target_conc$TP, 
                 ifelse(use_paleo_tp, tp_paleo, lake_criteria$TP))
   )
   
@@ -2481,7 +2505,7 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
   print(newdata)
   
   pred <- tryCatch({
-    predict(reg_results$model, newdata = newdata, interval = "confidence", level = 0.95)
+    predict(reg_results$model, newdata = newdata, interval = "prediction", level = 0.95)
   }, error = function(e) {
     warning("Prediction failed: ", e$message)
     data.frame(fit = NA, lwr = NA, upr = NA)
@@ -2499,20 +2523,12 @@ calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutr
     target_conc = target_conc,
     max_agm = max_agm,
     percent_reduction = percent_reduction,
-    equation = equation
+    equation = equation,
+    prediction_interval = c(pred[1, "lwr"], pred[1, "upr"]),
+    predicted_chlac = pred[1, "fit"],
+    capped = capped,
+    reduction_scenario = reduction_scenario
   )
-  
-  # Handle confidence interval and predicted value based on prediction output format
-  if (is.matrix(pred) || is.data.frame(pred)) {
-    result_list$confidence_interval <- c(pred[1, "lwr"], pred[1, "upr"])
-    result_list$predicted_chlac <- pred[1, "fit"]
-  } else if (is.numeric(pred) && length(pred) >= 1) {
-    result_list$confidence_interval <- c(NA, NA)
-    result_list$predicted_chlac <- pred[1]
-  } else {
-    result_list$confidence_interval <- c(NA, NA)
-    result_list$predicted_chlac <- NA
-  }
   
   return(result_list)
 }
@@ -2548,7 +2564,15 @@ observeEvent(input$calculate_tmdl, {
   chlac_target <- as.numeric(ifelse(is.null(input$chlac_target) || input$chlac_target == 0,
                                     criteria$CHLAC, input$chlac_target))
   
-  # Validate inputs
+  # Input validation
+  if (chlac_target <= 0) {
+    showNotification("CHLAC target must be positive.", type = "error", duration = 10)
+    return()
+  }
+  if (input$use_paleo_tp && (is.null(input$tp_paleo) || input$tp_paleo <= 0)) {
+    showNotification("Paleo TP must be positive when selected.", type = "error", duration = 10)
+    return()
+  }
   if (is.null(input$impaired_nutrients) || length(input$impaired_nutrients) == 0) {
     showNotification("Please select at least one impaired nutrient.", type = "error", duration = 10)
     return()
@@ -2560,6 +2584,7 @@ observeEvent(input$calculate_tmdl, {
   cat("Criteria:", paste(names(criteria), criteria, sep="=", collapse=", "), "\n")
   cat("CHLAC target:", chlac_target, "\n")
   cat("Impaired nutrients:", paste(input$impaired_nutrients, collapse=", "), "\n")
+  cat("Reduction scenario:", input$reduction_scenario, "\n")
   
   # Execute TMDL calculation
   tryCatch({
@@ -2575,16 +2600,6 @@ observeEvent(input$calculate_tmdl, {
       cat("Single WBID calculation for:", input$reg_wbid, "\n")
       cat("Number of data rows:", nrow(filtered_data), "\n")
       
-      # Print important columns presence
-      cat("Columns in filtered data:", paste(colnames(filtered_data), collapse=", "), "\n")
-      cat("TN present:", "TN" %in% colnames(filtered_data), "\n")
-      cat("TP present:", "TP" %in% colnames(filtered_data), "\n")
-      cat("CHLAC present:", "CHLAC" %in% colnames(filtered_data), "\n")
-      
-      # Print regression model information
-      cat("Regression model formula:", as.character(formula(reg_results$model)), "\n")
-      cat("Regression model variables:", paste(names(reg_results$model$coefficients), collapse=", "), "\n")
-      
       # Calculate TMDL
       tmdl <- calculate_tmdl_single(
         data = filtered_data,
@@ -2593,7 +2608,10 @@ observeEvent(input$calculate_tmdl, {
         impaired_nutrients = input$impaired_nutrients,
         lake_criteria = criteria,
         use_paleo_tp = input$use_paleo_tp,
-        tp_paleo = as.numeric(input$tp_paleo)
+        tp_paleo = as.numeric(input$tp_paleo),
+        reduction_scenario = input$reduction_scenario,
+        custom_tn_reduction = input$custom_tn_reduction,
+        custom_tp_reduction = input$custom_tp_reduction
       )
       
       # Add lake type and criteria to results
@@ -2601,7 +2619,23 @@ observeEvent(input$calculate_tmdl, {
       tmdl$criteria <- criteria
       tmdl_results(tmdl)
       
-      # Log success
+      # Show warning if targets were capped
+      if (any(unlist(tmdl$capped))) {
+        showNotification("Some target concentrations were capped at minimum values due to unrealistically low calculated targets.", 
+                         type = "warning", duration = 10)
+      }
+      
+      # Show warning for custom scenario if target not met
+      if (input$reduction_scenario == "custom") {
+        predicted_chlac <- tmdl$predicted_chlac
+        if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
+          showNotification(paste0("Custom reductions do not meet CHLAC target of ", 
+                                  round(chlac_target, 2), ". Predicted CHLAC is ", 
+                                  round(predicted_chlac, 2), "."), 
+                           type = "warning", duration = 10)
+        }
+      }
+      
       cat("TMDL calculation successful\n")
       
     } else {
@@ -2616,10 +2650,16 @@ observeEvent(input$calculate_tmdl, {
         return()
       }
       
+      # Track capped warnings across all WBIDs
+      any_capped <- FALSE
+      any_custom_warnings <- FALSE
+      
       # Process each WBID
+      # In your TMDL calculation for multiple WBIDs:
       tmdl_results_list <- lapply(selected_wbids, function(wbid) {
         tryCatch({
-          cat("Processing WBID:", wbid, "\n")
+          cat("Processing TMDL for WBID:", wbid, "\n")
+          # Get data for this WBID
           wbid_data <- data %>% dplyr::filter(wbid == !!wbid)
           
           if (nrow(wbid_data) == 0) {
@@ -2627,34 +2667,45 @@ observeEvent(input$calculate_tmdl, {
             return(NULL)
           }
           
-          cat("Number of rows for WBID", wbid, ":", nrow(wbid_data), "\n")
-          
-          # Check required columns
-          if (!all(c("TN", "TP", "CHLAC") %in% colnames(wbid_data))) {
-            cat("Missing required columns for WBID", wbid, "\n")
-            cat("Available columns:", paste(colnames(wbid_data), collapse=", "), "\n")
-            return(NULL)
-          }
-          
-          # Calculate TMDL for this WBID
+          # Use the GLOBAL regression model for all WBIDs, not individual models
           tmdl <- calculate_tmdl_single(
             data = wbid_data,
-            reg_results = reg_results,
+            reg_results = reg_results,  # This uses the combined regression model
             chlac_target = chlac_target,
             impaired_nutrients = input$impaired_nutrients,
             lake_criteria = criteria,
             use_paleo_tp = input$use_paleo_tp,
-            tp_paleo = as.numeric(input$tp_paleo)
+            tp_paleo = as.numeric(input$tp_paleo),
+            reduction_scenario = input$reduction_scenario,
+            custom_tn_reduction = input$custom_tn_reduction,
+            custom_tp_reduction = input$custom_tp_reduction
           )
           
-          # Format results
+          # Track if any values were capped
+          if (any(unlist(tmdl$capped))) {
+            any_capped <<- TRUE
+          }
+          
+          # Track custom scenario warnings
+          if (input$reduction_scenario == "custom") {
+            predicted_chlac <- tmdl$predicted_chlac
+            if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
+              any_custom_warnings <<- TRUE
+            }
+          }
+          
+          # Format results for table
           list(
             WBID = wbid,
+            Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
+            Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
             Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
             Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
             Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
             Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
-            Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2)
+            Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
+            TN_Capped = tmdl$capped$TN,
+            TP_Capped = tmdl$capped$TP
           )
         }, error = function(e) {
           cat("Error processing WBID", wbid, ":", e$message, "\n")
@@ -2662,8 +2713,14 @@ observeEvent(input$calculate_tmdl, {
         })
       })
       
-      # Filter out NULL results
+      # Filter out NULL results FIRST, before trying to use valid_results
       valid_results <- Filter(Negate(is.null), tmdl_results_list)
+      
+      # Debug the results AFTER defining valid_results
+      cat("Valid TMDL results:", length(valid_results), "\n")
+      if (length(valid_results) > 0) {
+        cat("First result sample:", paste(names(valid_results[[1]]), collapse=", "), "\n")
+      }
       
       # Validate results
       if (length(valid_results) == 0) {
@@ -2675,104 +2732,54 @@ observeEvent(input$calculate_tmdl, {
       tmdl_results(list(
         results = valid_results,
         lake_type = current_lake_type,
-        criteria = criteria
+        criteria = criteria,
+        reduction_scenario = input$reduction_scenario
       ))
       
+      showNotification(paste0("TMDL calculation completed for ", length(valid_results), " WBIDs."), type = "message")
+      
+      # Show warnings for multiple WBIDs if needed
+      if (any_capped) {
+        showNotification("Some target concentrations were capped at minimum values for one or more WBIDs.", 
+                         type = "warning", duration = 10)
+      }
+      
+      if (any_custom_warnings) {
+        showNotification("Custom reductions do not meet CHLAC target for one or more WBIDs.", 
+                         type = "warning", duration = 10)
+      }
+      
       cat("TMDL calculation for multiple WBIDs completed successfully\n")
-      cat("Number of valid results:", length(valid_results), "\n")
     }
     
     showNotification("TMDL calculation completed successfully.", type = "message")
   }, error = function(e) {
     showNotification(paste("TMDL calculation failed:", e$message), type = "error", duration = 10)
     cat("TMDL Error:", e$message, "\n")
-    cat("Error traceback:\n")
-    print(traceback())
   })
 })
 
-# Improved TMDL plot
-output$tmdl_plot <- renderPlotly({
-  req(tmdl_results(), regression_results(), results())
-  data <- results()$geomeans
+# New outputs for UI enhancements
+output$current_tn_box <- renderValueBox({
+  req(tmdl_results())
   tmdl <- tmdl_results()
-  
-  plots <- lapply(input$impaired_nutrients, function(nutrient) {
-    if (input$regression_type == "single") {
-      target_value <- tmdl$target_conc[[nutrient]] %||% NA
-      plot_data <- data %>% filter(wbid == input$reg_wbid)
-    } else {
-      target_value <- NA  # No single target for multiple WBIDs
-      plot_data <- data %>% filter(wbid %in% selected_wbids_for_regression())
-    }
-    
-    # Check if we have the required data
-    if (!all(c(nutrient, "CHLAC") %in% colnames(plot_data))) {
-      return(plot_ly() %>% 
-               add_annotations(
-                 text = paste("Missing required columns:", paste(setdiff(c(nutrient, "CHLAC"), colnames(plot_data)), collapse=", ")),
-                 showarrow = FALSE,
-                 font = list(size = 16)
-               ))
-    }
-    
-    # Check if we have valid numeric data
-    if (all(is.na(plot_data[[nutrient]])) || all(is.na(plot_data[["CHLAC"]]))) {
-      return(plot_ly() %>% 
-               add_annotations(
-                 text = paste("No valid data for", nutrient, "or CHLAC"),
-                 showarrow = FALSE,
-                 font = list(size = 16)
-               ))
-    }
-    
-    # Get CHLAC target for plotting
-    chlac_target_value <- if(!is.null(input$chlac_target) && input$chlac_target > 0) {
-      input$chlac_target
-    } else if(!is.null(tmdl$criteria) && !is.null(tmdl$criteria$CHLAC)) {
-      tmdl$criteria$CHLAC
-    } else {
-      NA
-    }
-    
-    p <- ggplot(plot_data, aes_string(x = nutrient, y = "CHLAC")) +
-      geom_point(alpha = 0.6) +
-      geom_smooth(method = "lm", formula = y ~ x, se = input$show_confidence, color = "blue") +
-      labs(title = paste("TMDL Analysis for", nutrient),
-           x = paste(nutrient, "(mg/L)"), y = "CHLAC (µg/L)") +
-      theme_minimal()
-    
-    if (input$show_target_lines) {
-      # Add horizontal line for CHLAC target if available
-      if (!is.na(chlac_target_value)) {
-        p <- p + geom_hline(yintercept = chlac_target_value, linetype = "dashed", color = "red")
-      }
-      
-      # Add vertical line for nutrient target if available
-      if (!is.na(target_value)) {
-        max_y <- max(plot_data$CHLAC, na.rm = TRUE)
-        p <- p + 
-          geom_vline(xintercept = target_value, linetype = "dashed", color = "blue") +
-          annotate("text", x = target_value, y = max_y, 
-                   label = sprintf("Target %s: %.3f", nutrient, target_value), 
-                   vjust = -1, color = "blue")
-      }
-    }
-    
-    ggplotly(p)
-  })
-  
-  if (length(plots) == 0) {
-    return(plot_ly() %>% 
-             add_annotations(
-               text = "No impaired nutrients selected for plotting",
-               showarrow = FALSE,
-               font = list(size = 16)
-             ))
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$max_agm$TN)
+  } else {
+    "See Table"
   }
-  
-  subplot(plots, nrows = 1, shareY = TRUE, titleX = TRUE) %>%
-    layout(height = 600, showlegend = FALSE)
+  valueBox(value, "Current TN (mg/L)", icon = icon("water"), color = "aqua")
+})
+
+output$current_tp_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$max_agm$TP)
+  } else {
+    "See Table"
+  }
+  valueBox(value, "Current TP (mg/L)", icon = icon("water"), color = "teal")
 })
 
 # Target TN Box
@@ -2879,14 +2886,14 @@ output$confidence_interval <- renderText({
   req(tmdl_results())
   tmdl <- tmdl_results()
   if (input$regression_type == "single") {
-    ci <- tmdl$confidence_interval
+    ci <- tmdl$prediction_interval
     if (is.null(ci) || any(is.na(ci))) {
-      "95% Confidence Interval for CHLAC: Not available"
+      "95% Prediction Interval for CHLAC: Not available"
     } else {
-      paste0("95% Confidence Interval for CHLAC: [", round(ci[1], 2), ", ", round(ci[2], 2), "] µg/L")
+      paste0("95% Prediction Interval for CHLAC: [", round(ci[1], 2), ", ", round(ci[2], 2), "] µg/L")
     }
   } else {
-    "Confidence Intervals: See Table"
+    "Prediction Intervals: See Table"
   }
 })
 
@@ -2902,71 +2909,203 @@ output$lake_type_info <- renderText({
 output$tmdl_summary <- renderUI({
   req(tmdl_results())
   tmdl <- tmdl_results()
+  chlac_target <- tmdl$criteria$CHLAC %||% input$chlac_target
   
   if (input$regression_type == "single") {
-    # For single WBID, show detailed summary
+    scenario_text <- paste0("<p><strong>Reduction Scenario:</strong> ", 
+                            switch(input$reduction_scenario,
+                                   "both" = "Proportional reduction of both TN and TP",
+                                   "tn_only" = "Reduce TN only (TP fixed at criterion)",
+                                   "tp_only" = "Reduce TP only (TN fixed at criterion)",
+                                   "custom" = paste0("Custom reduction: TN by ", input$custom_tn_reduction, 
+                                                     "%, TP by ", input$custom_tp_reduction, "%"),
+                                   "Unknown"),
+                            "</p>")
+    
+    current_max_text <- "<p><strong>Current Maximum AGM:</strong>"
+    for (nutrient in c("TN", "TP")) {
+      if (!is.null(tmdl$max_agm[[nutrient]])) {
+        current_max_text <- paste0(current_max_text, "<br>", nutrient, ": ", 
+                                   safe_display(tmdl$max_agm[[nutrient]], "N/A", 3), " mg/L")
+      }
+    }
+    current_max_text <- paste0(current_max_text, "</p>")
+    
     target_conc_text <- "<p><strong>Target Concentrations:</strong>"
     if (length(tmdl$target_conc) > 0) {
       target_conc_text <- paste0(target_conc_text, "<br>",
                                  paste(names(tmdl$target_conc), ":", 
-                                       sapply(tmdl$target_conc, function(x) ifelse(is.null(x) || is.na(x), "N/A", round(x, 3))), 
+                                       sapply(tmdl$target_conc, safe_display), 
                                        "mg/L", collapse = "<br>"))
-    } else {
-      target_conc_text <- paste0(target_conc_text, "<br>None calculated")
     }
     target_conc_text <- paste0(target_conc_text, "</p>")
     
     percent_reduction_text <- "<p><strong>Percent Reductions Needed:</strong>"
     if (length(tmdl$percent_reduction) > 0) {
-      percent_reduction_text <- paste0(percent_reduction_text, "<br>",
-                                       paste(names(tmdl$percent_reduction), ":", 
-                                             sapply(tmdl$percent_reduction, function(x) ifelse(is.null(x) || is.na(x), "N/A", paste0(round(x, 1), "%"))), 
-                                             collapse = "<br>"))
-    } else {
-      percent_reduction_text <- paste0(percent_reduction_text, "<br>None calculated")
+      for (nutrient in names(tmdl$percent_reduction)) {
+        if (!is.null(tmdl$percent_reduction[[nutrient]]) && !is.na(tmdl$percent_reduction[[nutrient]])) {
+          percent_reduction_text <- paste0(percent_reduction_text, "<br>", nutrient, ": ", 
+                                           safe_display(tmdl$percent_reduction[[nutrient]], "N/A", 1), "%")
+        }
+      }
     }
     percent_reduction_text <- paste0(percent_reduction_text, "</p>")
     
     interpretation_text <- paste0("<p><strong>Interpretation:</strong><br>",
-                                  "To achieve the target chlorophyll-a concentration of ", 
-                                  round(ifelse(is.null(input$chlac_target) || input$chlac_target == 0, 
-                                               tmdl$criteria$CHLAC, input$chlac_target), 1), 
-                                  " µg/L, the following reductions are necessary:")
+                                  "To achieve the target CHLAC of ", 
+                                  round(chlac_target, 1), " µg/L")
     
+    if (input$reduction_scenario == "custom") {
+      interpretation_text <- paste0(interpretation_text, ", the custom reductions result in:")
+    } else {
+      interpretation_text <- paste0(interpretation_text, ", reduce:")
+    }
+    
+    # Loop correctly through nutrients for interpretation text
     for (nutrient in names(tmdl$percent_reduction)) {
       if (!is.null(tmdl$percent_reduction[[nutrient]]) && !is.na(tmdl$percent_reduction[[nutrient]])) {
-        interpretation_text <- paste0(interpretation_text, 
-                                      "<br>- Reduce ", nutrient, " by ", 
-                                      round(tmdl$percent_reduction[[nutrient]], 1), 
-                                      "% to ", 
-                                      round(tmdl$target_conc[[nutrient]], 3), 
-                                      " mg/L.")
+        interpretation_text <- paste0(interpretation_text, "<br>- ", nutrient, " from ", 
+                                      safe_display(tmdl$max_agm[[nutrient]], "N/A", 3), " mg/L to ", 
+                                      safe_display(tmdl$target_conc[[nutrient]], "N/A", 3), " mg/L (", 
+                                      safe_display(tmdl$percent_reduction[[nutrient]], "N/A", 1), "%).")
       }
     }
     interpretation_text <- paste0(interpretation_text, "</p>")
     
-    confidence_text <- "<p><strong>Confidence Interval:</strong><br>"
-    if (!is.null(tmdl$confidence_interval) && !any(is.na(tmdl$confidence_interval))) {
-      confidence_text <- paste0(confidence_text,
-                                "The 95% confidence interval for CHLAC at the target nutrient levels is [",
-                                round(tmdl$confidence_interval[1], 2), ", ", 
-                                round(tmdl$confidence_interval[2], 2), "] µg/L.")
-    } else {
-      confidence_text <- paste0(confidence_text, "Confidence interval not available.")
-    }
-    confidence_text <- paste0(confidence_text, "</p>")
+    prediction_text <- paste0("<p><strong>Prediction Interval:</strong><br>",
+                              "At these levels, the 95% prediction interval for CHLAC is [", 
+                              round(tmdl$prediction_interval[1], 2), ", ", 
+                              round(tmdl$prediction_interval[2], 2), "] µg/L.</p>")
     
-    # Combine all sections
-    HTML(paste("<h4>TMDL Analysis Results:</h4>",
-               target_conc_text,
-               percent_reduction_text,
-               interpretation_text,
-               confidence_text))
+    # Add warning text if any targets were capped
+    warning_text <- ""
+    if (!is.null(tmdl$capped) && any(unlist(tmdl$capped))) {
+      capped_nutrients <- names(tmdl$capped)[unlist(tmdl$capped)]
+      warning_text <- paste0("<p style='color:red'><strong>Warning:</strong> Target concentration(s) for ",
+                             paste(capped_nutrients, collapse=" and "),
+                             " were capped at 0.01 mg/L to maintain physically realistic values. ",
+                             "This may indicate the regression model predicts unrealistically low targets.",
+                             "</p>")
+    }
+    
+    # Add warning for custom scenarios if targets not met
+    custom_warning <- ""
+    if (input$reduction_scenario == "custom" && !is.null(tmdl$predicted_chlac) && 
+        !is.na(tmdl$predicted_chlac) && tmdl$predicted_chlac > chlac_target) {
+      custom_warning <- paste0("<p style='color:orange'><strong>Note:</strong> The custom reduction scenario ",
+                               "results in a predicted CHLAC of ", round(tmdl$predicted_chlac, 2), " µg/L, ",
+                               "which does not meet the target of ", round(chlac_target, 1), " µg/L.</p>")
+    }
+    
+    HTML(paste("<h4>TMDL Analysis Results:</h4>", 
+               scenario_text,
+               current_max_text, 
+               target_conc_text, 
+               percent_reduction_text, 
+               interpretation_text, 
+               prediction_text,
+               warning_text,
+               custom_warning))
   } else {
     # For multiple WBIDs, just show a summary message
+    scenario_text <- paste0("<p><strong>Reduction Scenario:</strong> ", 
+                            switch(input$reduction_scenario,
+                                   "both" = "Proportional reduction of both TN and TP",
+                                   "tn_only" = "Reduce TN only (TP fixed at criterion)",
+                                   "tp_only" = "Reduce TP only (TN fixed at criterion)",
+                                   "custom" = paste0("Custom reduction: TN by ", input$custom_tn_reduction, 
+                                                     "%, TP by ", input$custom_tp_reduction, "%"),
+                                   "Unknown"),
+                            "</p>")
+    
     HTML(paste("<h4>TMDL Analysis Results (Multiple WBIDs):</h4>",
+               scenario_text,
                "<p>See the TMDL Results Table below for detailed target concentrations and percent reductions for each WBID.</p>"))
   }
+})
+
+# Improved TMDL plot
+output$tmdl_plot <- renderPlotly({
+  req(tmdl_results(), regression_results(), results())
+  data <- results()$geomeans
+  tmdl <- tmdl_results()
+  
+  plots <- lapply(input$impaired_nutrients, function(nutrient) {
+    if (input$regression_type == "single") {
+      target_value <- tmdl$target_conc[[nutrient]] %||% NA
+      plot_data <- data %>% filter(wbid == input$reg_wbid)
+    } else {
+      target_value <- NA  # No single target for multiple WBIDs
+      plot_data <- data %>% filter(wbid %in% selected_wbids_for_regression())
+    }
+    
+    # Check if we have the required data
+    if (!all(c(nutrient, "CHLAC") %in% colnames(plot_data))) {
+      return(plot_ly() %>% 
+               add_annotations(
+                 text = paste("Missing required columns:", paste(setdiff(c(nutrient, "CHLAC"), colnames(plot_data)), collapse=", ")),
+                 showarrow = FALSE,
+                 font = list(size = 16)
+               ))
+    }
+    
+    # Check if we have valid numeric data
+    if (all(is.na(plot_data[[nutrient]])) || all(is.na(plot_data[["CHLAC"]]))) {
+      return(plot_ly() %>% 
+               add_annotations(
+                 text = paste("No valid data for", nutrient, "or CHLAC"),
+                 showarrow = FALSE,
+                 font = list(size = 16)
+               ))
+    }
+    
+    # Get CHLAC target for plotting
+    chlac_target_value <- if(!is.null(input$chlac_target) && input$chlac_target > 0) {
+      input$chlac_target
+    } else if(!is.null(tmdl$criteria) && !is.null(tmdl$criteria$CHLAC)) {
+      tmdl$criteria$CHLAC
+    } else {
+      NA
+    }
+    
+    p <- ggplot(plot_data, aes_string(x = nutrient, y = "CHLAC")) +
+      geom_point(alpha = 0.6) +
+      geom_smooth(method = "lm", formula = y ~ x, se = input$show_confidence, color = "blue") +
+      labs(title = paste("TMDL Analysis for", nutrient),
+           x = paste(nutrient, "(mg/L)"), y = "CHLAC (µg/L)") +
+      theme_minimal()
+    
+    if (input$show_target_lines) {
+      # Add horizontal line for CHLAC target if available
+      if (!is.na(chlac_target_value)) {
+        p <- p + geom_hline(yintercept = chlac_target_value, linetype = "dashed", color = "red")
+      }
+      
+      # Add vertical line for nutrient target if available
+      if (!is.na(target_value)) {
+        max_y <- max(plot_data$CHLAC, na.rm = TRUE)
+        p <- p + 
+          geom_vline(xintercept = target_value, linetype = "dashed", color = "blue") +
+          annotate("text", x = target_value, y = max_y, 
+                   label = sprintf("Target %s: %.3f", nutrient, target_value), 
+                   vjust = -1, color = "blue")
+      }
+    }
+    
+    ggplotly(p)
+  })
+  
+  if (length(plots) == 0) {
+    return(plot_ly() %>% 
+             add_annotations(
+               text = "No impaired nutrients selected for plotting",
+               showarrow = FALSE,
+               font = list(size = 16)
+             ))
+  }
+  
+  subplot(plots, nrows = 1, shareY = TRUE, titleX = TRUE) %>%
+    layout(height = 600, showlegend = FALSE)
 })
 
 # Add TMDL Results Table for Multiple WBIDs
@@ -2977,18 +3116,991 @@ output$tmdl_results_table <- renderDT({
       return(datatable(data.frame(Message = "No valid TMDL results available."), options = list(dom = 't')))
     }
     
+    # Convert list of results to data frame
     results_df <- do.call(rbind, lapply(tmdl_results()$results, function(result) {
       # Convert each result to a data frame with consistent columns
       as.data.frame(result)
     }))
     
+    # Clean up columns - hide the capped flags which are internal only
+    if ("TN_Capped" %in% names(results_df)) {
+      results_df$TN_Capped <- NULL
+    }
+    if ("TP_Capped" %in% names(results_df)) {
+      results_df$TP_Capped <- NULL
+    }
+    
+    # Rename columns to make them more readable and compact
+    colnames(results_df) <- gsub("Current_", "Curr_", colnames(results_df))
+    colnames(results_df) <- gsub("Percent_Reduction_", "Red_", colnames(results_df))
+    colnames(results_df) <- gsub("Predicted_", "Pred_", colnames(results_df))
+    
     datatable(
       results_df,
-      options = list(pageLength = 10, autoWidth = TRUE),
+      options = list(
+        pageLength = 10, 
+        scrollX = TRUE,  # Enable horizontal scrolling
+        autoWidth = FALSE,  # Don't try to auto-size columns
+        columnDefs = list(
+          list(width = '60px', targets = 0),  # WBID column
+          list(width = '70px', targets = c(1, 2, 3, 4)),  # Current and Target columns
+          list(width = '70px', targets = c(5, 6, 7))  # Reduction and Predicted columns
+        )
+      ),
       rownames = FALSE
+    ) %>%
+      formatStyle(
+        'Target_TN',
+        target = 'row',
+        backgroundColor = styleEqual("0.01", "lightyellow")
+      ) %>%
+      formatStyle(
+        'Target_TP',
+        target = 'row',
+        backgroundColor = styleEqual("0.01", "lightyellow")
+      )
+  }
+})
+
+# Download handler for multiple WBIDs
+output$download_tmdl_table <- downloadHandler(
+  filename = function() { paste("tmdl_results_", Sys.Date(), ".csv", sep = "") },
+  content = function(file) {
+    req(tmdl_results())
+    if (input$regression_type == "multiple") {
+      results_df <- do.call(rbind, lapply(tmdl_results()$results, as.data.frame))
+      write.csv(results_df, file, row.names = FALSE)
+    }
+  }
+)
+
+
+# Update impaired nutrient choices based on regression results
+observe({
+  req(regression_results())
+  coefficients <- regression_results()$summary$term
+  nutrients_in_regression <- c("TN", "TP")[c("TN", "TP") %in% coefficients]
+  updateCheckboxGroupInput(session, "impaired_nutrients",
+                           choices = nutrients_in_regression,
+                           selected = nutrients_in_regression[1])
+})
+
+# Define the null-coalesce operator if not already defined
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+# Helper function to safely display values
+safe_display <- function(value, default = "N/A", digits = 3) {
+  if (is.null(value) || is.na(value)) {
+    return(default)
+  } else {
+    return(round(as.numeric(value), digits))
+  }
+}
+
+# Helper function to calculate TMDL for a single dataset
+calculate_tmdl_single <- function(data, reg_results, chlac_target, impaired_nutrients, 
+                                  lake_criteria, use_paleo_tp, tp_paleo, 
+                                  reduction_scenario = "both", 
+                                  custom_tn_reduction = 0, custom_tp_reduction = 0) {
+  # Validate inputs
+  if (is.null(data) || nrow(data) == 0) {
+    stop("No data available for TMDL calculation")
+  }
+  
+  if (is.null(reg_results) || is.null(reg_results$summary)) {
+    stop("Regression results not available for TMDL calculation")
+  }
+  
+  if (length(impaired_nutrients) == 0) {
+    stop("No impaired nutrients selected")
+  }
+  
+  # Enhanced error handling: Check if impaired nutrients are in the model
+  coefficients <- reg_results$summary
+  tn_coeff <- ifelse("TN" %in% coefficients$term, 
+                     as.numeric(coefficients$estimate[coefficients$term == "TN"]), 0)
+  tp_coeff <- ifelse("TP" %in% coefficients$term, 
+                     as.numeric(coefficients$estimate[coefficients$term == "TP"]), 0)
+  if (("TN" %in% impaired_nutrients && tn_coeff == 0) || 
+      ("TP" %in% impaired_nutrients && tp_coeff == 0)) {
+    stop("Selected impaired nutrient(s) not in regression model.")
+  }
+  
+  # Print diagnostics
+  cat("TMDL calculation inputs:\n")
+  cat("- Data rows:", nrow(data), "\n")
+  cat("- Impaired nutrients:", paste(impaired_nutrients, collapse=", "), "\n")
+  cat("- CHLAC target:", chlac_target, "\n")
+  cat("- Lake criteria:", paste(names(lake_criteria), lake_criteria, sep="=", collapse=", "), "\n")
+  cat("- Reduction scenario:", reduction_scenario, "\n")
+  
+  # Ensure numeric columns
+  data$TN <- as.numeric(data$TN)
+  data$TP <- as.numeric(data$TP)
+  data$CHLAC <- as.numeric(data$CHLAC)
+  
+  # Check for NA values
+  if (all(is.na(data$TN)) || all(is.na(data$TP)) || all(is.na(data$CHLAC))) {
+    stop("All values for TN, TP, or CHLAC are NA in the data")
+  }
+  
+  # Extract coefficients safely
+  intercept <- ifelse("(Intercept)" %in% coefficients$term, 
+                      as.numeric(coefficients$estimate[coefficients$term == "(Intercept)"]), 0)
+  
+  # Handle empty coefficient values
+  if (length(tn_coeff) == 0) tn_coeff <- 0
+  if (length(tp_coeff) == 0) tp_coeff <- 0
+  if (length(intercept) == 0) intercept <- 0
+  
+  cat("Extracted coefficients:\n")
+  cat("- TN coefficient:", tn_coeff, "\n")
+  cat("- TP coefficient:", tp_coeff, "\n")
+  cat("- Intercept:", intercept, "\n")
+  
+  if (all(c(tn_coeff, tp_coeff) == 0)) {
+    stop("No valid TN or TP coefficients found in regression results.")
+  }
+  
+  # Get current concentrations
+  current_tn <- max(data$TN, na.rm = TRUE)
+  current_tp <- max(data$TP, na.rm = TRUE)
+  cat("Current TN:", current_tn, "Current TP:", current_tp, "\n")
+  
+  # Calculate target concentrations based on reduction scenario
+  target_conc <- list()
+  max_agm <- list()
+  percent_reduction <- list()
+  capped <- list(TN = FALSE, TP = FALSE)  # Track if values were capped
+  min_conc <- 0.01  # Minimum concentration in mg/L
+  
+  if (reduction_scenario == "both" && length(impaired_nutrients) == 2 && tn_coeff != 0 && tp_coeff != 0) {
+    # Both TN and TP impaired - reduce proportionally
+    cat("Calculating for both TN and TP - proportional reduction\n")
+    ratio <- tn_coeff / tp_coeff
+    
+    x <- (tn_coeff * current_tn + tp_coeff * current_tp + intercept - chlac_target) / 
+      (tn_coeff * ratio + tp_coeff)
+    
+    target_conc$TN <- current_tn - x * ratio
+    target_conc$TP <- current_tp - x
+    
+    cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
+  } else if (reduction_scenario == "tn_only" || (reduction_scenario == "both" && 
+                                                 ("TN" %in% impaired_nutrients && !("TP" %in% impaired_nutrients)))) {
+    # Only TN impaired or tn_only scenario
+    cat("Calculating for TN only\n")
+    tp_value <- ifelse(use_paleo_tp, as.numeric(tp_paleo), as.numeric(lake_criteria$TP))
+    cat("Using TP value:", tp_value, "\n")
+    
+    target_conc$TN <- (chlac_target - intercept - (tp_coeff * tp_value)) / tn_coeff
+    target_conc$TP <- tp_value
+    cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
+  } else if (reduction_scenario == "tp_only" || (reduction_scenario == "both" && 
+                                                 ("TP" %in% impaired_nutrients && !("TN" %in% impaired_nutrients)))) {
+    # Only TP impaired or tp_only scenario
+    cat("Calculating for TP only\n")
+    tn_value <- as.numeric(lake_criteria$TN)
+    target_conc$TP <- (chlac_target - intercept - (tn_coeff * tn_value)) / tp_coeff
+    target_conc$TN <- tn_value
+    cat("Target TN:", target_conc$TN, "Target TP:", target_conc$TP, "\n")
+  } else if (reduction_scenario == "custom") {
+    # Apply user-specified custom reductions
+    cat("Calculating with custom reductions\n")
+    target_conc$TN <- current_tn * (1 - custom_tn_reduction / 100)
+    target_conc$TP <- current_tp * (1 - custom_tp_reduction / 100)
+    
+    # Check if CHLAC target is met with custom reductions
+    predicted_chlac <- intercept + (tn_coeff * target_conc$TN) + (tp_coeff * target_conc$TP)
+    cat("Custom reductions result in predicted CHLAC:", predicted_chlac, "\n")
+    if (predicted_chlac > chlac_target) {
+      warning("Custom reductions do not meet the CHLAC target of ", chlac_target, 
+              ". Predicted CHLAC is ", round(predicted_chlac, 2), ".")
+    }
+  }
+  
+  # Cap minimum values to ensure physically realistic results
+  if (!is.null(target_conc$TN)) {
+    if (target_conc$TN < min_conc) {
+      cat("TN target capped at minimum value:", min_conc, "\n")
+      target_conc$TN <- min_conc
+      capped$TN <- TRUE
+    }
+  }
+  if (!is.null(target_conc$TP)) {
+    if (target_conc$TP < min_conc) {
+      cat("TP target capped at minimum value:", min_conc, "\n")
+      target_conc$TP <- min_conc
+      capped$TP <- TRUE
+    }
+  }
+  
+  # Calculate max AGM and percent reduction
+  for (nutrient in c("TN", "TP")) {
+    max_agm[[nutrient]] <- max(data[[nutrient]], na.rm = TRUE)
+    if (!is.null(target_conc[[nutrient]])) {
+      percent_reduction[[nutrient]] <- ((max_agm[[nutrient]] - target_conc[[nutrient]]) / 
+                                          max_agm[[nutrient]]) * 100
+      # Cap percent reduction at 0-100%
+      percent_reduction[[nutrient]] <- max(0, min(100, percent_reduction[[nutrient]]))
+    } else {
+      warning("Target concentration for ", nutrient, " is NULL")
+    }
+  }
+  
+  # Build regression equation
+  equation <- "CHLAC = "
+  if (tn_coeff != 0) equation <- paste0(equation, sprintf("%.3f * TN", tn_coeff))
+  if (tp_coeff != 0) {
+    equation <- paste0(equation, ifelse(tn_coeff != 0, " + ", ""), sprintf("%.3f * TP", tp_coeff))
+  }
+  equation <- paste0(equation, sprintf(" + %.3f", intercept))
+  
+  # Prediction interval
+  newdata <- data.frame(
+    TN = ifelse(!is.null(target_conc$TN), target_conc$TN, lake_criteria$TN),
+    TP = ifelse(!is.null(target_conc$TP), target_conc$TP, 
+                ifelse(use_paleo_tp, tp_paleo, lake_criteria$TP))
+  )
+  
+  cat("Prediction data:\n")
+  print(newdata)
+  
+  pred <- tryCatch({
+    predict(reg_results$model, newdata = newdata, interval = "prediction", level = 0.95)
+  }, error = function(e) {
+    warning("Prediction failed: ", e$message)
+    data.frame(fit = NA, lwr = NA, upr = NA)
+  })
+  
+  if (all(is.na(pred))) {
+    warning("Prediction returned all NA values")
+  } else {
+    cat("Prediction results:\n")
+    print(pred)
+  }
+  
+  # Create final result
+  result_list <- list(
+    target_conc = target_conc,
+    max_agm = max_agm,
+    percent_reduction = percent_reduction,
+    equation = equation,
+    prediction_interval = c(pred[1, "lwr"], pred[1, "upr"]),
+    predicted_chlac = pred[1, "fit"],
+    capped = capped,
+    reduction_scenario = reduction_scenario
+  )
+  
+  return(result_list)
+}
+
+
+
+# Instructions for TMDL tab
+output$tmdl_instructions <- renderUI({
+  if (is.null(results()) || is.null(results()$geomeans) || nrow(results()$geomeans) == 0) {
+    div(
+      class = "alert alert-info",
+      icon("info-circle"), 
+      strong("Data Required:"), 
+      " Before calculating TMDL, please complete these steps:",
+      tags$ol(
+        tags$li("Extract water quality data in the", tags$b("Data Extraction"), "tab"),
+        tags$li("Run a regression analysis in the", tags$b("Regression Analysis"), "tab"),
+        tags$li("Then return here to calculate TMDL values")
+      )
+    )
+  } else if (is.null(regression_results())) {
+    div(
+      class = "alert alert-warning",
+      icon("exclamation-triangle"), 
+      strong("Regression Required:"), 
+      " Please run a regression analysis in the Regression Analysis tab before calculating TMDL."
+    )
+  } else {
+    # When all prerequisites are met, show a success message
+    div(
+      class = "alert alert-success",
+      icon("check-circle"), 
+      strong("Ready for TMDL Calculation:"), 
+      " Data and regression model are available. You can now calculate TMDL values."
     )
   }
 })
+
+
+
+
+# Main TMDL calculation logic
+observeEvent(input$calculate_tmdl, {
+  # Check if data has been extracted yet
+  if (is.null(results()) || is.null(results()$geomeans) || nrow(results()$geomeans) == 0) {
+    showNotification("Please extract data in the Data Extraction tab before calculating TMDL.", 
+                     type = "warning", duration = 10)
+    return()
+  }
+  
+  # Check if regression has been run
+  if (is.null(regression_results())) {
+    showNotification("Please run a regression analysis in the Regression Analysis tab before calculating TMDL.", 
+                     type = "warning", duration = 10)
+    return()
+  }
+  
+  # Main TMDL calculation logic
+  req(regression_results(), results(), lake_type())
+  
+  reg_results <- regression_results()
+  data <- results()$geomeans
+  current_lake_type <- lake_type()
+  
+  # Validate lake type
+  if (is.na(current_lake_type)) {
+    showNotification("Unable to determine lake type. Check color and alkalinity data.", 
+                     type = "error", duration = 10)
+    return()
+  }
+  
+  # Define criteria based on lake type
+  criteria <- list(
+    "1" = list(CHLAC = 20, TP = 0.05, TN = 1.27),
+    "2" = list(CHLAC = 20, TP = 0.03, TN = 1.05),
+    "3" = list(CHLAC = 6, TP = 0.01, TN = 0.51)
+  )[[as.character(current_lake_type)]]
+  
+  # Validate criteria
+  if (is.null(criteria)) {
+    showNotification(paste("Invalid lake type:", current_lake_type), type = "error", duration = 10)
+    return()
+  }
+  
+  chlac_target <- as.numeric(ifelse(is.null(input$chlac_target) || input$chlac_target == 0,
+                                    criteria$CHLAC, input$chlac_target))
+  
+  # Input validation
+  if (chlac_target <= 0) {
+    showNotification("CHLAC target must be positive.", type = "error", duration = 10)
+    return()
+  }
+  if (input$use_paleo_tp && (is.null(input$tp_paleo) || input$tp_paleo <= 0)) {
+    showNotification("Paleo TP must be positive when selected.", type = "error", duration = 10)
+    return()
+  }
+  if (is.null(input$impaired_nutrients) || length(input$impaired_nutrients) == 0) {
+    showNotification("Please select at least one impaired nutrient.", type = "error", duration = 10)
+    return()
+  }
+  
+  # Log start of TMDL calculation
+  cat("Starting TMDL calculation\n")
+  cat("Lake type:", current_lake_type, "\n")
+  cat("Criteria:", paste(names(criteria),criteria, sep="=", collapse=", "), "\n")
+  cat("CHLAC target:", chlac_target, "\n")
+  cat("Impaired nutrients:", paste(input$impaired_nutrients, collapse=", "), "\n")
+  cat("Reduction scenario:", input$reduction_scenario, "\n")
+  
+  # Execute TMDL calculation
+  tryCatch({
+    if (input$regression_type == "single") {
+      filtered_data <- data %>% filter(wbid == input$reg_wbid)
+      
+      # Validate data
+      if (nrow(filtered_data) == 0) {
+        showNotification("No data available for the selected WBID.", type = "error", duration = 10)
+        return()
+      }
+      
+      cat("Single WBID calculation for:", input$reg_wbid, "\n")
+      cat("Number of data rows:", nrow(filtered_data), "\n")
+      
+      # Calculate TMDL
+      tmdl <- calculate_tmdl_single(
+        data = filtered_data,
+        reg_results = reg_results,
+        chlac_target = chlac_target,
+        impaired_nutrients = input$impaired_nutrients,
+        lake_criteria = criteria,
+        use_paleo_tp = input$use_paleo_tp,
+        tp_paleo = as.numeric(input$tp_paleo),
+        reduction_scenario = input$reduction_scenario,
+        custom_tn_reduction = input$custom_tn_reduction,
+        custom_tp_reduction = input$custom_tp_reduction
+      )
+      
+      # Add lake type and criteria to results
+      tmdl$lake_type <- current_lake_type
+      tmdl$criteria <- criteria
+      tmdl_results(tmdl)
+      
+      # Show warning if targets were capped
+      if (any(unlist(tmdl$capped))) {
+        showNotification("Some target concentrations were capped at minimum values due to unrealistically low calculated targets.", 
+                         type = "warning", duration = 10)
+      }
+      
+      # Show warning for custom scenario if target not met
+      if (input$reduction_scenario == "custom") {
+        predicted_chlac <- tmdl$predicted_chlac
+        if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
+          showNotification(paste0("Custom reductions do not meet CHLAC target of ", 
+                                  round(chlac_target, 2), ". Predicted CHLAC is ", 
+                                  round(predicted_chlac, 2), "."), 
+                           type = "warning", duration = 10)
+        }
+      }
+      
+      cat("TMDL calculation successful\n")
+      
+    } else {
+      # Multiple WBIDs handling
+      cat("Multiple WBIDs calculation\n")
+      selected_wbids <- selected_wbids_for_regression()
+      cat("Selected WBIDs:", paste(selected_wbids, collapse=", "), "\n")
+      
+      # Validate WBIDs
+      if (length(selected_wbids) == 0) {
+        showNotification("No WBIDs selected for analysis.", type = "error", duration = 10)
+        return()
+      }
+      
+      # Track capped warnings across all WBIDs
+      any_capped <- FALSE
+      any_custom_warnings <- FALSE
+      
+      # Process each WBID
+      tmdl_results_list <- lapply(selected_wbids, function(wbid) {
+        tryCatch({
+          cat("Processing WBID:", wbid, "\n")
+          wbid_data <- data %>% dplyr::filter(wbid == !!wbid)
+          
+          if (nrow(wbid_data) == 0) {
+            cat("No data for WBID:", wbid, "\n")
+            return(NULL)
+          }
+          
+          # Calculate TMDL for this WBID
+          tmdl <- calculate_tmdl_single(
+            data = wbid_data,
+            reg_results = reg_results,
+            chlac_target = chlac_target,
+            impaired_nutrients = input$impaired_nutrients,
+            lake_criteria = criteria,
+            use_paleo_tp = input$use_paleo_tp,
+            tp_paleo = as.numeric(input$tp_paleo),
+            reduction_scenario = input$reduction_scenario,
+            custom_tn_reduction = input$custom_tn_reduction,
+            custom_tp_reduction = input$custom_tp_reduction
+          )
+          
+          # Track if any values were capped
+          if (any(unlist(tmdl$capped))) {
+            any_capped <<- TRUE
+          }
+          
+          # Track custom scenario warnings
+          if (input$reduction_scenario == "custom") {
+            predicted_chlac <- tmdl$predicted_chlac
+            if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
+              any_custom_warnings <<- TRUE
+            }
+          }
+          
+          # Format results with current AGM
+          list(
+            WBID = wbid,
+            Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
+            Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
+            Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
+            Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
+            Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
+            Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
+            Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
+            TN_Capped = tmdl$capped$TN,
+            TP_Capped = tmdl$capped$TP
+          )
+        }, error = function(e) {
+          cat("Error processing WBID", wbid, ":", e$message, "\n")
+          return(NULL)
+        })
+      })
+      
+      # Filter out NULL results
+      valid_results <- Filter(Negate(is.null), tmdl_results_list)
+      
+      # Validate results
+      if (length(valid_results) == 0) {
+        showNotification("No valid data for the selected WBIDs.", type = "error", duration = 10)
+        return()
+      }
+      
+      # Store results
+      tmdl_results(list(
+        results = valid_results,
+        lake_type = current_lake_type,
+        criteria = criteria,
+        reduction_scenario = input$reduction_scenario
+      ))
+      
+      # Show warnings for multiple WBIDs if needed
+      if (any_capped) {
+        showNotification("Some target concentrations were capped at minimum values for one or more WBIDs.", 
+                         type = "warning", duration = 10)
+      }
+      
+      if (any_custom_warnings) {
+        showNotification("Custom reductions do not meet CHLAC target for one or more WBIDs.", 
+                         type = "warning", duration = 10)
+      }
+      
+      cat("TMDL calculation for multiple WBIDs completed successfully\n")
+    }
+    
+    showNotification("TMDL calculation completed successfully.", type = "message")
+  }, error = function(e) {
+    showNotification(paste("TMDL calculation failed:", e$message), type = "error", duration = 10)
+    cat("TMDL Error:", e$message, "\n")
+  })
+})
+
+
+# Enable/disable the TMDL calculation button
+observe({
+  if (is.null(results()) || is.null(results()$geomeans) || nrow(results()$geomeans) == 0 || 
+      is.null(regression_results())) {
+    # Disable button when data or regression results aren't available
+    shinyjs::disable("calculate_tmdl")
+  } else {
+    # Enable button when all prerequisites are met
+    shinyjs::enable("calculate_tmdl")
+  }
+})
+
+
+# New outputs for UI enhancements
+output$current_tn_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$max_agm$TN)
+  } else {
+    "See Table"
+  }
+  valueBox(value, "Current TN (mg/L)", icon = icon("water"), color = "aqua")
+})
+
+output$current_tp_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$max_agm$TP)
+  } else {
+    "See Table"
+  }
+  valueBox(value, "Current TP (mg/L)", icon = icon("water"), color = "teal")
+})
+
+# Target TN Box
+output$target_tn_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$target_conc$TN)
+  } else {
+    "See Table"
+  }
+  
+  valueBox(
+    value = ifelse(is.na(value), "N/A", value),
+    subtitle = "Target TN (mg/L)",
+    icon = icon("bullseye"),
+    color = if (is.na(value) && input$regression_type == "single") "red" else "blue",
+    width = NULL
+  )
+})
+
+# Target TP Box
+output$target_tp_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  
+  value <- if (input$regression_type == "single") {
+    safe_display(tmdl$target_conc$TP)
+  } else {
+    "See Table"
+  }
+  
+  valueBox(
+    value = ifelse(is.na(value), "N/A", value),
+    subtitle = "Target TP (mg/L)",
+    icon = icon("bullseye"),
+    color = if (is.na(value) && input$regression_type == "single") "red" else "green",
+    width = NULL
+  )
+})
+
+# Percent Reduction TN Box
+output$percent_reduction_tn_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  
+  value <- if (input$regression_type == "single") {
+    reduction <- tmdl$percent_reduction$TN
+    if (is.null(reduction) || is.na(reduction)) {
+      "N/A"
+    } else {
+      paste0(round(reduction, 1), "%")
+    }
+  } else {
+    "See Table"
+  }
+  
+  valueBox(
+    value = value,
+    subtitle = "TN Reduction Needed",
+    icon = icon("percent"),
+    color = if (value == "N/A" && input$regression_type == "single") "red" else "purple",
+    width = NULL
+  )
+})
+
+# Percent Reduction TP Box
+output$percent_reduction_tp_box <- renderValueBox({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  
+  value <- if (input$regression_type == "single") {
+    reduction <- tmdl$percent_reduction$TP
+    if (is.null(reduction) || is.na(reduction)) {
+      "N/A"
+    } else {
+      paste0(round(reduction, 1), "%")
+    }
+  } else {
+    "See Table"
+  }
+  
+  valueBox(
+    value = value,
+    subtitle = "TP Reduction Needed",
+    icon = icon("percent"),
+    color = if (value == "N/A" && input$regression_type == "single") "red" else "orange",
+    width = NULL
+  )
+})
+
+output$regression_equation <- renderText({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  if (input$regression_type == "single") {
+    paste("Regression Equation:", tmdl$equation)
+  } else {
+    "Regression Equation: Varies by WBID (see regression results)"
+  }
+})
+
+output$confidence_interval <- renderText({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  if (input$regression_type == "single") {
+    ci <- tmdl$prediction_interval
+    if (is.null(ci) || any(is.na(ci))) {
+      "95% Prediction Interval for CHLAC: Not available"
+    } else {
+      paste0("95% Prediction Interval for CHLAC: [", round(ci[1], 2), ", ", round(ci[2], 2), "] µg/L")
+    }
+  } else {
+    "Prediction Intervals: See Table"
+  }
+})
+
+output$lake_type_info <- renderText({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  paste("Lake Type:", tmdl$lake_type,
+        "- CHLAC Criterion:", tmdl$criteria$CHLAC, "µg/L,",
+        "TP Criterion:", tmdl$criteria$TP, "mg/L,",
+        "TN Criterion:", tmdl$criteria$TN, "mg/L")
+})
+
+output$tmdl_summary <- renderUI({
+  req(tmdl_results())
+  tmdl <- tmdl_results()
+  chlac_target <- tmdl$criteria$CHLAC %||% input$chlac_target
+  
+  if (input$regression_type == "single") {
+    scenario_text <- paste0("<p><strong>Reduction Scenario:</strong> ", 
+                            switch(input$reduction_scenario,
+                                   "both" = "Proportional reduction of both TN and TP",
+                                   "tn_only" = "Reduce TN only (TP fixed at criterion)",
+                                   "tp_only" = "Reduce TP only (TN fixed at criterion)",
+                                   "custom" = paste0("Custom reduction: TN by ", input$custom_tn_reduction, 
+                                                     "%, TP by ", input$custom_tp_reduction, "%"),
+                                   "Unknown"),
+                            "</p>")
+    
+    current_max_text <- "<p><strong>Current Maximum AGM:</strong>"
+    for (nutrient in c("TN", "TP")) {
+      if (!is.null(tmdl$max_agm[[nutrient]])) {
+        current_max_text <- paste0(current_max_text, "<br>", nutrient, ": ", 
+                                   safe_display(tmdl$max_agm[[nutrient]], "N/A", 3), " mg/L")
+      }
+    }
+    current_max_text <- paste0(current_max_text, "</p>")
+    
+    target_conc_text <- "<p><strong>Target Concentrations:</strong>"
+    if (length(tmdl$target_conc) > 0) {
+      target_conc_text <- paste0(target_conc_text, "<br>",
+                                 paste(names(tmdl$target_conc), ":", 
+                                       sapply(tmdl$target_conc, safe_display), 
+                                       "mg/L", collapse = "<br>"))
+    }
+    target_conc_text <- paste0(target_conc_text, "</p>")
+    
+    percent_reduction_text <- "<p><strong>Percent Reductions Needed:</strong>"
+    if (length(tmdl$percent_reduction) > 0) {
+      for (nutrient in names(tmdl$percent_reduction)) {
+        if (!is.null(tmdl$percent_reduction[[nutrient]]) && !is.na(tmdl$percent_reduction[[nutrient]])) {
+          percent_reduction_text <- paste0(percent_reduction_text, "<br>", nutrient, ": ", 
+                                           safe_display(tmdl$percent_reduction[[nutrient]], "N/A", 1), "%")
+        }
+      }
+    }
+    percent_reduction_text <- paste0(percent_reduction_text, "</p>")
+    
+    interpretation_text <- paste0("<p><strong>Interpretation:</strong><br>",
+                                  "To achieve the target CHLAC of ", 
+                                  round(chlac_target, 1), " µg/L")
+    
+    if (input$reduction_scenario == "custom") {
+      interpretation_text <- paste0(interpretation_text, ", the custom reductions result in:")
+    } else {
+      interpretation_text <- paste0(interpretation_text, ", reduce:")
+    }
+    
+    for (nutrient in names(tmdl$percent_reduction)) {
+      if (!is.null(tmdl$percent_reduction[[nutrient]]) && !is.na(tmdl$percent_reduction[[nutrient]])) {
+        interpretation_text <- paste0(interpretation_text, "<br>- ", nutrient, " from ", 
+                                      safe_display(tmdl$max_agm[[nutrient]], "N/A", 3), " mg/L to ", 
+                                      safe_display(tmdl$target_conc[[nutrient]], "N/A", 3), " mg/L (", 
+                                      safe_display(tmdl$percent_reduction[[nutrient]], "N/A", 1), "%).")
+      }
+    }
+    interpretation_text <- paste0(interpretation_text, "</p>")
+    
+    prediction_text <- paste0("<p><strong>Prediction Interval:</strong><br>",
+                              "At these levels, the 95% prediction interval for CHLAC is [", 
+                              round(tmdl$prediction_interval[1], 2), ", ", 
+                              round(tmdl$prediction_interval[2], 2), "] µg/L.</p>")
+    
+    # Add warning text if any targets were capped
+    warning_text <- ""
+    if (!is.null(tmdl$capped) && any(unlist(tmdl$capped))) {
+      capped_nutrients <- names(tmdl$capped)[unlist(tmdl$capped)]
+      warning_text <- paste0("<p style='color:red'><strong>Warning:</strong> Target concentration(s) for ",
+                             paste(capped_nutrients, collapse=" and "),
+                             " were capped at 0.01 mg/L to maintain physically realistic values. ",
+                             "This may indicate the regression model predicts unrealistically low targets.",
+                             "</p>")
+    }
+    
+    # Add warning for custom scenarios if targets not met
+    custom_warning <- ""
+    if (input$reduction_scenario == "custom" && !is.null(tmdl$predicted_chlac) && 
+        !is.na(tmdl$predicted_chlac) && tmdl$predicted_chlac > chlac_target) {
+      custom_warning <- paste0("<p style='color:orange'><strong>Note:</strong> The custom reduction scenario ",
+                               "results in a predicted CHLAC of ", round(tmdl$predicted_chlac, 2), " µg/L, ",
+                               "which does not meet the target of ", round(chlac_target, 1), " µg/L.</p>")
+    }
+    
+    HTML(paste("<h4>TMDL Analysis Results:</h4>", 
+               scenario_text,
+               current_max_text, 
+               target_conc_text, 
+               percent_reduction_text, 
+               interpretation_text, 
+               prediction_text,
+               warning_text,
+               custom_warning))
+  } else {
+    # For multiple WBIDs, just show a summary message
+    scenario_text <- paste0("<p><strong>Reduction Scenario:</strong> ", 
+                            switch(input$reduction_scenario,
+                                   "both" = "Proportional reduction of both TN and TP",
+                                   "tn_only" = "Reduce TN only (TP fixed at criterion)",
+                                   "tp_only" = "Reduce TP only (TN fixed at criterion)",
+                                   "custom" = paste0("Custom reduction: TN by ", input$custom_tn_reduction, 
+                                                     "%, TP by ", input$custom_tp_reduction, "%"),
+                                   "Unknown"),
+                            "</p>")
+    
+    HTML(paste("<h4>TMDL Analysis Results (Multiple WBIDs):</h4>",
+               scenario_text,
+               "<p>See the TMDL Results Table below for detailed target concentrations and percent reductions for each WBID.</p>"))
+  }
+})
+
+# Improved TMDL plot
+output$tmdl_plot <- renderPlotly({
+  req(tmdl_results(), regression_results(), results())
+  data <- results()$geomeans
+  tmdl <- tmdl_results()
+  
+  plots <- lapply(input$impaired_nutrients, function(nutrient) {
+    if (input$regression_type == "single") {
+      target_value <- tmdl$target_conc[[nutrient]] %||% NA
+      plot_data <- data %>% filter(wbid == input$reg_wbid)
+    } else {
+      target_value <- NA  # No single target for multiple WBIDs
+      plot_data <- data %>% filter(wbid %in% selected_wbids_for_regression())
+    }
+    
+    # Check if we have the required data
+    if (!all(c(nutrient, "CHLAC") %in% colnames(plot_data))) {
+      return(plot_ly() %>% 
+               add_annotations(
+                 text = paste("Missing required columns:", paste(setdiff(c(nutrient, "CHLAC"), colnames(plot_data)), collapse=", ")),
+                 showarrow = FALSE,
+                 font = list(size = 16)
+               ))
+    }
+    
+    # Check if we have valid numeric data
+    if (all(is.na(plot_data[[nutrient]])) || all(is.na(plot_data[["CHLAC"]]))) {
+      return(plot_ly() %>% 
+               add_annotations(
+                 text = paste("No valid data for", nutrient, "or CHLAC"),
+                 showarrow = FALSE,
+                 font = list(size = 16)
+               ))
+    }
+    
+    # Get CHLAC target for plotting
+    chlac_target_value <- if(!is.null(input$chlac_target) && input$chlac_target > 0) {
+      input$chlac_target
+    } else if(!is.null(tmdl$criteria) && !is.null(tmdl$criteria$CHLAC)) {
+      tmdl$criteria$CHLAC
+    } else {
+      NA
+    }
+    
+    p <- ggplot(plot_data, aes_string(x = nutrient, y = "CHLAC")) +
+      geom_point(alpha = 0.6) +
+      geom_smooth(method = "lm", formula = y ~ x, se = input$show_confidence, color = "blue") +
+      labs(title = paste("TMDL Analysis for", nutrient),
+           x = paste(nutrient, "(mg/L)"), y = "CHLAC (µg/L)") +
+      theme_minimal()
+    
+    if (input$show_target_lines) {
+      # Add horizontal line for CHLAC target if available
+      if (!is.na(chlac_target_value)) {
+        p <- p + geom_hline(yintercept = chlac_target_value, linetype = "dashed", color = "red")
+      }
+      
+      # Add vertical line for nutrient target if available
+      if (!is.na(target_value)) {
+        max_y <- max(plot_data$CHLAC, na.rm = TRUE)
+        p <- p + 
+          geom_vline(xintercept = target_value, linetype = "dashed", color = "blue") +
+          annotate("text", x = target_value, y = max_y, 
+                   label = sprintf("Target %s: %.3f", nutrient, target_value), 
+                   vjust = -1, color = "blue")
+      }
+    }
+    
+    ggplotly(p)
+  })
+  
+  if (length(plots) == 0) {
+    return(plot_ly() %>% 
+             add_annotations(
+               text = "No impaired nutrients selected for plotting",
+               showarrow = FALSE,
+               font = list(size = 16)
+             ))
+  }
+  
+  subplot(plots, nrows = 1, shareY = TRUE, titleX = TRUE) %>%
+    layout(height = 600, showlegend = FALSE)
+})
+
+# Add TMDL Results Table for Multiple WBIDs
+output$tmdl_results_table <- renderDT({
+  cat("Running tmdl_results_table renderer\n")
+  
+  # Check if tmdl_results exists
+  if (is.null(tmdl_results())) {
+    cat("tmdl_results is NULL\n")
+    return(datatable(data.frame(Message = "No TMDL results available yet."), options = list(dom = 't')))
+  }
+  
+  cat("tmdl_results structure:", class(tmdl_results()), "\n")
+  
+  if (input$regression_type == "multiple") {
+    if (is.null(tmdl_results()$results) || length(tmdl_results()$results) == 0) {
+      cat("tmdl_results()$results is NULL or empty\n")
+      return(datatable(data.frame(Message = "No valid TMDL results available."), options = list(dom = 't')))
+    }
+    
+    cat("Number of TMDL results:", length(tmdl_results()$results), "\n")
+    
+    # Convert list of results to data frame
+    results_df <- do.call(rbind, lapply(tmdl_results()$results, function(result) {
+      if (is.null(result)) return(NULL)
+      as.data.frame(result)
+    }))
+    
+    cat("Results dataframe dimensions:", paste(dim(results_df), collapse="x"), "\n")
+    
+    return(datatable(
+      results_df,
+      options = list(pageLength = 10, autoWidth = TRUE),
+      rownames = FALSE
+    ) %>%
+      formatStyle(
+        'Target_TN',
+        target = 'row',
+        backgroundColor = styleEqual("0.01", "lightyellow")
+      ) %>%
+      formatStyle(
+        'Target_TP',
+        target = 'row',
+        backgroundColor = styleEqual("0.01", "lightyellow")
+      ))
+  } else {
+    # For single WBID, you might want to show a simple summary
+    cat("Single WBID TMDL calculation\n")
+    return(datatable(data.frame(Message = "TMDL calculation completed for single WBID, check summary."), 
+                     options = list(dom = 't')))
+  }
+})
+
+
+output$debug_tmdl <- renderPrint({
+  cat("Regression type:", input$regression_type, "\n")
+  cat("TMDL results available:", !is.null(tmdl_results()), "\n")
+  
+  if (!is.null(tmdl_results())) {
+    cat("Results structure:\n")
+    str(tmdl_results())
+  }
+})
+
+# Add this to your UI in the TMDL Calculations tab
+verbatimTextOutput("debug_tmdl")
+
+# Download handler for multiple WBIDs
+output$download_tmdl_table <- downloadHandler(
+  filename = function() { paste("tmdl_results_", Sys.Date(), ".csv", sep = "") },
+  content = function(file) {
+    req(tmdl_results())
+    if (input$regression_type == "multiple") {
+      results_df <- do.call(rbind, lapply(tmdl_results()$results, as.data.frame))
+      write.csv(results_df, file, row.names = FALSE)
+    }
+  }
+)
   
   
   ####################################################################################################################################################################################
