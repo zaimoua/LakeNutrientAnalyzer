@@ -712,62 +712,137 @@ ui <- dashboardPage(
             status = "primary",
             solidHeader = TRUE,
             collapsible = TRUE,
-            column(4,
-                   radioButtons("regression_type", "Regression Type:",
-                                choices = c("Single WBID" = "single", "Multiple WBIDs" = "multiple")),
-                   conditionalPanel(
-                     condition = "input.regression_type == 'single'",
-                     selectInput("reg_wbid", "Select WBID:", choices = NULL)
-                   ),
-                   conditionalPanel(
-                     condition = "input.regression_type == 'multiple'",
-                     radioButtons("wbid_selection_method", "WBID Selection Method:",
-                                  choices = c("Use Geospatial Selection" = "geospatial", 
-                                              "Manual Input" = "manual")),
-                     conditionalPanel(
-                       condition = "input.wbid_selection_method == 'manual'",
-                       selectizeInput("manual_combined_wbids", "Search and Select WBIDs:",
-                                      choices = NULL, multiple = TRUE, options = list(
-                                        placeholder = 'Type to search WBIDs',
-                                        onInitialize = I('function() { this.setValue(""); }')
-                                      ))
-                     ),
-                     conditionalPanel(
-                       condition = "input.wbid_selection_method == 'geospatial'",
-                       selectizeInput("geospatial_combined_wbids", "Geospatially Selected WBIDs:",
-                                      choices = NULL, multiple = TRUE)
-                     )
-                   ),
-                   numericInput("start_year", "Start Year:",
-                                value = 2000, min = 1990, max = as.integer(format(Sys.Date(), "%Y"))),
-                   numericInput("end_year", "End Year:",
-                                value = as.integer(format(Sys.Date(), "%Y")),
-                                min = 1990, max = as.integer(format(Sys.Date(), "%Y")))
-            ),
-            column(4,
-                   selectizeInput("regression_response", "Response Variable:",
-                                  choices = NULL,
-                                  selected = "CHLAC"),
-                   selectizeInput("regression_explanatory1", "Explanatory Variable 1:",
-                                  choices = NULL,
-                                  selected = "TN"),
-                   checkboxInput("enable_explanatory2", "Add Second Explanatory Variable",
-                                 value = TRUE),
-                   conditionalPanel(
-                     condition = "input.enable_explanatory2 == true",
-                     selectizeInput("regression_explanatory2", "Explanatory Variable 2:",
-                                    choices = NULL,
-                                    selected = "TP")
-                   )
-            ),
-            column(4,
-                   checkboxInput("include_interaction", "Include Interaction Term", value = FALSE),
-                   checkboxInput("log_transform", "Apply Log Transformation", value = FALSE),
-                   actionButton("runShapiroWilk", "Check Normality", icon = icon("check"),
-                                class = "btn-info"),
-                   br(), br(),
-                   actionButton("runRegression", "Run Regression", icon = icon("play"),
-                                class = "btn-lg btn-success btn-block")
+            fluidRow(
+              column(
+                width = 4,
+                h4("Data Selection"),
+                radioButtons(
+                  "regression_type",
+                  "Analysis Type:",
+                  choices = c("Single WBID" = "single", "Multiple WBIDs" = "multiple"),
+                  inline = TRUE
+                ),
+                conditionalPanel(
+                  condition = "input.regression_type == 'single'",
+                  selectizeInput(
+                    "reg_wbid",
+                    "Select WBID:",
+                    choices = NULL,
+                    options = list(placeholder = "Select a WBID")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input.regression_type == 'multiple'",
+                  radioButtons(
+                    "wbid_selection_method",
+                    "WBID Selection Method:",
+                    choices = c("Geospatial Selection" = "geospatial", "Manual Input" = "manual"),
+                    inline = TRUE
+                  ),
+                  conditionalPanel(
+                    condition = "input.wbid_selection_method == 'manual'",
+                    selectizeInput(
+                      "manual_combined_wbids",
+                      "Search and Select WBIDs:",
+                      choices = NULL,
+                      multiple = TRUE,
+                      options = list(
+                        placeholder = "Type to search WBIDs",
+                        onInitialize = I('function() { this.setValue(""); }')
+                      )
+                    )
+                  ),
+                  conditionalPanel(
+                    condition = "input.wbid_selection_method == 'geospatial'",
+                    selectizeInput(
+                      "geospatial_combined_wbids",
+                      "Geospatially Selected WBIDs:",
+                      choices = NULL,
+                      multiple = TRUE,
+                      options = list(placeholder = "WBIDs from geospatial filter")
+                    )
+                  )
+                ),
+                numericInput(
+                  "start_year",
+                  "Start Year:",
+                  value = 2000,
+                  min = 1990,
+                  max = as.integer(format(Sys.Date(), "%Y"))
+                ),
+                numericInput(
+                  "end_year",
+                  "End Year:",
+                  value = as.integer(format(Sys.Date(), "%Y")),
+                  min = 1990,
+                  max = as.integer(format(Sys.Date(), "%Y"))
+                )
+              ),
+              column(
+                width = 4,
+                h4("Variables"),
+                selectizeInput(
+                  "regression_response",
+                  "Response Variable:",
+                  choices = c("CHLAC", "TN", "TP"),  # Adjust based on your data
+                  selected = "CHLAC",
+                  options = list(placeholder = "Select response variable")
+                ),
+                selectizeInput(
+                  "regression_explanatory1",
+                  "Explanatory Variable 1:",
+                  choices = c("TN", "TP"),  # Adjust based on your data
+                  selected = "TN",
+                  options = list(placeholder = "Select first explanatory variable")
+                ),
+                checkboxInput(
+                  "enable_explanatory2",
+                  "Add Second Explanatory Variable",
+                  value = TRUE
+                ),
+                conditionalPanel(
+                  condition = "input.enable_explanatory2",
+                  selectizeInput(
+                    "regression_explanatory2",
+                    "Explanatory Variable 2:",
+                    choices = c("TN", "TP"),  # Adjust based on your data
+                    selected = "TP",
+                    options = list(placeholder = "Select second explanatory variable")
+                  )
+                )
+              ),
+              column(
+                width = 4,
+                h4("Options & Actions"),
+                checkboxInput(
+                  "include_interaction",
+                  "Include Interaction Term",
+                  value = FALSE
+                ),
+                checkboxInput(
+                  "log_transform",
+                  "Log Transform Response",
+                  value = FALSE
+                ) %>% 
+                  shinyBS::tipify(
+                    title = "Applies log transformation to CHLAC in regression and TMDL calculations.",
+                    placement = "left"
+                  ),
+                actionButton(
+                  "runShapiroWilk",
+                  "Check Normality",
+                  icon = icon("check-circle"),
+                  class = "btn-info btn-block",
+                  style = "margin-top: 10px;"
+                ),
+                actionButton(
+                  "runRegression",
+                  "Run Regression",
+                  icon = icon("play"),
+                  class = "btn-success btn-block",
+                  style = "margin-top: 10px;"
+                )
+              )
             )
           )
         ),
@@ -775,94 +850,64 @@ ui <- dashboardPage(
           tabBox(
             id = "regressionResults",
             width = 12,
-            tabPanel("Summary",
-                     fluidRow(
-                       column(6, tableOutput("regressionSummary") %>% withSpinner()),
-                       column(6,
-                              valueBoxOutput("r_squared_box", width = 6),
-                              valueBoxOutput("adj_r_squared_box", width = 6),
-                              valueBoxOutput("f_statistic_box", width = 6),
-                              valueBoxOutput("p_value_box", width = 6)
-                       )
-                     ),
-                     fluidRow(
-                       column(12, plotlyOutput("regressionPlot", height = "500px") %>% withSpinner())
-                     )
+            tabPanel(
+              "Summary",
+              fluidRow(
+                column(6, tableOutput("regressionSummary") %>% withSpinner()),
+                column(
+                  6,
+                  valueBoxOutput("r_squared_box", width = 6),
+                  valueBoxOutput("adj_r_squared_box", width = 6),
+                  valueBoxOutput("f_statistic_box", width = 6),
+                  valueBoxOutput("p_value_box", width = 6)
+                )
+              ),
+              fluidRow(
+                column(12, plotlyOutput("regressionPlot", height = "500px") %>% withSpinner())
+              )
             ),
-            tabPanel("Diagnostics",
-                     fluidRow(
-                       column(6, plotlyOutput("resid_vs_fitted", height = "300px") %>% withSpinner()),
-                       column(6, plotlyOutput("qq_plot", height = "300px") %>% withSpinner())
-                     ),
-                     fluidRow(
-                       column(6, plotlyOutput("scale_location", height = "300px") %>% withSpinner()),
-                       column(6, plotlyOutput("resid_vs_leverage", height = "300px") %>% withSpinner())
-                     ),
-                     fluidRow(
-                       column(4, tableOutput("vif_table") %>% withSpinner()),
-                       column(4, verbatimTextOutput("bp_test") %>% withSpinner()),
-                       column(4, verbatimTextOutput("dw_test") %>% withSpinner())
-                     )
+            tabPanel(
+              "Diagnostics",
+              fluidRow(
+                column(6, plotlyOutput("resid_vs_fitted", height = "300px") %>% withSpinner()),
+                column(6, plotlyOutput("qq_plot", height = "300px") %>% withSpinner())
+              ),
+              fluidRow(
+                column(6, plotlyOutput("scale_location", height = "300px") %>% withSpinner()),
+                column(6, plotlyOutput("resid_vs_leverage", height = "300px") %>% withSpinner())
+              ),
+              fluidRow(
+                column(4, tableOutput("vif_table") %>% withSpinner()),
+                column(4, verbatimTextOutput("bp_test") %>% withSpinner()),
+                column(4, verbatimTextOutput("dw_test") %>% withSpinner())
+              )
             ),
-            tabPanel("Interpretation",
-                     fluidRow(
-                       box(
-                         title = "Model Overview",
-                         width = 12,
-                         status = "primary",
-                         solidHeader = TRUE,
-                         collapsible = TRUE,
-                         uiOutput("modelOverview")
-                       )
-                     ),
-                     fluidRow(
-                       box(
-                         title = "Model Performance",
-                         width = 6,
-                         status = "info",
-                         solidHeader = TRUE,
-                         collapsible = TRUE,
-                         uiOutput("modelPerformance")
-                       ),
-                       box(
-                         title = "Coefficient Interpretation",
-                         width = 6,
-                         status = "success",
-                         solidHeader = TRUE,
-                         collapsible = TRUE,
-                         uiOutput("coefficientInterpretation")
-                       )
-                     ),
-                     fluidRow(
-                       box(
-                         title = "Assumption Checks",
-                         width = 12,
-                         status = "warning",
-                         solidHeader = TRUE,
-                         collapsible = TRUE,
-                         uiOutput("normalityCheck"),
-                         uiOutput("homoscedasticityCheck"),
-                         uiOutput("multicollinearityCheck"),
-                         uiOutput("autocorrelationCheck")
-                       )
-                     ),
-                     fluidRow(
-                       box(
-                         title = "Conclusion",
-                         width = 12,
-                         status = "danger",
-                         solidHeader = TRUE,
-                         collapsible = TRUE,
-                         uiOutput("conclusionInterpretation")
-                       )
-                     )
+            tabPanel(
+              "Interpretation",
+              fluidRow(
+                box(title = "Model Overview", width = 12, status = "primary", solidHeader = TRUE, collapsible = TRUE,
+                    uiOutput("modelOverview")),
+                box(title = "Model Performance", width = 6, status = "info", solidHeader = TRUE, collapsible = TRUE,
+                    uiOutput("modelPerformance")),
+                box(title = "Coefficient Interpretation", width = 6, status = "success", solidHeader = TRUE, collapsible = TRUE,
+                    uiOutput("coefficientInterpretation")),
+                box(title = "Assumption Checks", width = 12, status = "warning", solidHeader = TRUE, collapsible = TRUE,
+                    uiOutput("normalityCheck"), uiOutput("homoscedasticityCheck"),
+                    uiOutput("multicollinearityCheck"), uiOutput("autocorrelationCheck")),
+                box(title = "Conclusion", width = 12, status = "danger", solidHeader = TRUE, collapsible = TRUE,
+                    uiOutput("conclusionInterpretation"))
+              )
             ),
             tabPanel(
               "TMDL Calculations",
               fluidRow(
-                # Left Column: Inputs and Lake Info
+                column(12, 
+                       uiOutput("tmdl_instructions")
+                )
+              ),
+              fluidRow(
                 column(
-                  3,
+                  width = 3,
                   box(
                     title = "TMDL Parameters",
                     status = "primary",
@@ -870,25 +915,76 @@ ui <- dashboardPage(
                     width = NULL,
                     checkboxGroupInput(
                       "impaired_nutrients",
-                      "Impaired Nutrient(s):",
+                      "Impaired Nutrients:",
                       choices = c("Total Nitrogen (TN)" = "TN", "Total Phosphorus (TP)" = "TP"),
                       selected = "TN",
                       inline = FALSE
-                    ),
+                    ) %>% 
+                      shinyBS::tipify(
+                        title = "Select nutrients to target; must be included in the regression model.",
+                        placement = "right"
+                      ),
                     numericInput(
                       "chlac_target",
                       "CHLAC Target (µg/L):",
                       value = 20,
                       min = 0,
                       step = 0.1
+                    ) %>% 
+                      shinyBS::tipify(
+                        title = "Target CHLAC; must be positive. Defaults to lake criterion if blank or 0.",
+                        placement = "right"
+                      ),
+                    radioButtons(
+                      "reduction_scenario",
+                      "Reduction Scenario:",
+                      choices = c(
+                        "Reduce Both TN and TP" = "both",
+                        "Reduce TN Only" = "tn_only",
+                        "Reduce TP Only" = "tp_only",
+                        "Custom Reduction" = "custom"
+                      ),
+                      selected = "both"
+                    ) %>% 
+                      shinyBS::tipify(
+                        title = "Choose how to prioritize nutrient reductions.",
+                        placement = "right"
+                      ),
+                    # Conditional panel for custom reductions
+                    conditionalPanel(
+                      condition = "input.reduction_scenario == 'custom'",
+                      numericInput(
+                        "custom_tn_reduction",
+                        "TN Reduction (%):",
+                        value = 50,
+                        min = 0,
+                        max = 100,
+                        step = 1
+                      ),
+                      numericInput(
+                        "custom_tp_reduction",
+                        "TP Reduction (%):",
+                        value = 50,
+                        min = 0,
+                        max = 100,
+                        step = 1
+                      ) %>% 
+                        shinyBS::tipify(
+                          title = "Specify custom percent reductions. Warning will show if CHLAC target isn't met.",
+                          placement = "right"
+                        )
                     ),
                     checkboxInput(
                       "use_paleo_tp",
                       "Use Paleo TP",
                       value = FALSE
-                    ),
+                    ) %>% 
+                      shinyBS::tipify(
+                        title = "Use paleolimnological TP instead of lake criterion. Must be positive if selected.",
+                        placement = "right"
+                      ),
                     conditionalPanel(
-                      condition = "input.use_paleo_tp == true",
+                      condition = "input.use_paleo_tp",
                       numericInput(
                         "tp_paleo",
                         "Paleo TP (mg/L):",
@@ -900,9 +996,15 @@ ui <- dashboardPage(
                     actionButton(
                       "calculate_tmdl",
                       "Calculate TMDL",
-                      class = "btn-primary btn-lg btn-block",
-                      icon = icon("calculator")
-                    )
+                      icon = icon("calculator"),
+                      class = "btn-primary btn-block",
+                      style = "margin-top: 15px;"
+                    ) %>% 
+                      shinyBS::tipify(
+                        title = "Requires data extraction and regression analysis to be completed first.",
+                        placement = "bottom"
+                      ),
+                    helpText("TMDL calculation reduces nutrients based on selected scenario to meet the CHLAC target. Targets are capped at a minimum value of 0.01 mg/L.")
                   ),
                   box(
                     title = "Lake Information",
@@ -910,46 +1012,46 @@ ui <- dashboardPage(
                     solidHeader = TRUE,
                     width = NULL,
                     textOutput("lake_type_info"),
-                    helpText("Lake type and criteria based on color and alkalinity.")
+                    helpText("Based on lake color and alkalinity.")
                   )
                 ),
-                # Right Column: Outputs
                 column(
-                  9,
+                  width = 9,
                   fluidRow(
-                    valueBoxOutput("target_tn_box", width = 3),
-                    valueBoxOutput("target_tp_box", width = 3),
-                    valueBoxOutput("percent_reduction_tn_box", width = 3),
-                    valueBoxOutput("percent_reduction_tp_box", width = 3)
+                    valueBoxOutput("current_tn_box", width = 4),
+                    valueBoxOutput("target_tn_box", width = 4),
+                    valueBoxOutput("percent_reduction_tn_box", width = 4)
                   ),
                   fluidRow(
-                    column(
-                      8,
-                      box(
-                        title = "Regression Results",
-                        status = "success",
-                        solidHeader = TRUE,
-                        width = NULL,
-                        tags$div(
-                          tags$p(strong("Equation:"), style = "margin-bottom: 5px;"),
-                          tags$p(textOutput("regression_equation"), style = "font-size: 14px; margin-bottom: 15px;")
-                        ),
-                        tags$div(
-                          tags$p(strong("Confidence Interval:"), style = "margin-bottom: 5px;"),
-                          textOutput("confidence_interval")
-                        )
+                    valueBoxOutput("current_tp_box", width = 4),
+                    valueBoxOutput("target_tp_box", width = 4),
+                    valueBoxOutput("percent_reduction_tp_box", width = 4)
+                  ),
+                  fluidRow(
+                    box(
+                      title = "Regression Results",
+                      status = "success",
+                      solidHeader = TRUE,
+                      width = 8,
+                      div(
+                        strong("Equation:"), 
+                        style = "margin-bottom: 5px;",
+                        textOutput("regression_equation"), 
+                        style = "font-size: 14px; margin-bottom: 15px;"
+                      ),
+                      div(
+                        strong("Confidence Interval:"), 
+                        style = "margin-bottom: 5px;",
+                        textOutput("confidence_interval")
                       )
                     ),
-                    column(
-                      4,
-                      box(
-                        title = "Plot Options",
-                        status = "info",
-                        solidHeader = TRUE,
-                        width = NULL,
-                        checkboxInput("show_confidence", "Show Confidence Interval", value = TRUE),
-                        checkboxInput("show_target_lines", "Show Target Lines", value = TRUE)
-                      )
+                    box(
+                      title = "Plot Options",
+                      status = "info",
+                      solidHeader = TRUE,
+                      width = 4,
+                      checkboxInput("show_confidence", "Show Confidence Interval", value = TRUE),
+                      checkboxInput("show_target_lines", "Show Target Lines", value = TRUE)
                     )
                   ),
                   fluidRow(
@@ -958,7 +1060,7 @@ ui <- dashboardPage(
                       status = "primary",
                       solidHeader = TRUE,
                       width = 12,
-                      plotlyOutput("tmdl_plot", height = "600px")
+                      plotlyOutput("tmdl_plot", height = "600px") %>% withSpinner()
                     )
                   ),
                   fluidRow(
@@ -970,24 +1072,27 @@ ui <- dashboardPage(
                       uiOutput("tmdl_summary")
                     )
                   ),
-                  # Table for Multiple WBIDs (shown only when applicable)
                   conditionalPanel(
                     condition = "input.regression_type == 'multiple'",
-                    fluidRow(
-                      box(
-                        title = "TMDL Results Table",
-                        status = "success",
-                        solidHeader = TRUE,
-                        width = 12,
-                        DTOutput("tmdl_results_table"),
-                        helpText("Detailed TMDL results for each selected WBID.")
-                      )
+                    box(
+                      title = "TMDL Results Table",
+                      status = "success",
+                      solidHeader = TRUE,
+                      width = 12,
+                      div(
+                        style = "width: 100%; overflow-x: auto;",
+                        DTOutput("tmdl_results_table") %>% withSpinner()
+                      ),
+                      helpText("Detailed TMDL results for each selected WBID. Yellow highlighting indicates target values capped at minimum threshold (0.01 mg/L)."),
+                      downloadButton("download_tmdl_table", "Download TMDL Results", class = "btn-info")
                     )
                   )
                 )
               )
             )
-      ))),
+          )
+        )
+      ),
         tabItem(
           tabName = "about",
           fluidRow(
@@ -1072,7 +1177,7 @@ ui <- dashboardPage(
       ),
     tags$footer(
       class = "footer",
-      p("© 2025 Zaim Ouazzani - LakeNutrientAnalyzer, Version 1.0.0")
+      p("© 2025 LakeNutrientAnalyzer, Version 1.0.0")
     )
   )
 )
