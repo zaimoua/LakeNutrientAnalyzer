@@ -32,19 +32,26 @@ Try the [online demo](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/) to see th
 
 ## Installation
 
-1. **Clone the Repository**:
-   ```bash
+1. **Get the Repository**:
+   
+   **Option A**: Download ZIP file:
+   - Click the green "Code" button
+   - Select "Download ZIP"
+   - Extract the ZIP file to your desired location
+
+   **Option B**: Clone using Git:
+   ```
    git clone https://github.com/zaimoua/LakeNutrientAnalyzer.git
    cd LakeNutrientAnalyzer
    ```
 
 2. **Set Working Directory** in R or RStudio:
-   ```r
+   ```
    setwd("path/to/LakeNutrientAnalyzer")
    ```
 
 3. **Install Dependencies**:
-   ```r
+   ```
    source("install_packages.R")
    ```
 
