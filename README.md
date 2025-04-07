@@ -52,11 +52,7 @@ Try the [online demo](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/) to see th
 
 The app requires the `IWR66_database.sqlite` database (from IWR Run 66, the latest update). You have two options:
 
-### Option 1: Download Pre-processed Database (Recommended)
-
-Download the ready-to-use SQLite database from [Google Drive](https://drive.google.com/file/d/1XU1Ggoyxxnph3UGgDpesha0VknGR4rRQ/view?usp=sharing) and place it in the `data/` directory.
-
-### Option 2: Automated Processing
+### Automated Processing
 
 1. First, download the original IWR database files from the [Florida DEP website](https://publicfiles.dep.state.fl.us/dear/IWR/)
 2. Run the included database conversion script:
@@ -73,13 +69,6 @@ Launch the app locally by running the `app.R` script:
 # In R or RStudio
 source("app.R")
 ```
-
-Alternatively, you can use:
-```r
-shiny::runApp()
-```
-
-Both methods will start the Shiny application, initializing the Lake Nutrient Analyzer dashboard.
 
 ## Data Requirements
 
