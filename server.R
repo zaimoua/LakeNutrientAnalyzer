@@ -2578,29 +2578,22 @@ observeEvent(input$calculate_tmdl, {
     return()
   }
   
-  # Log start of TMDL calculation
-  cat("Starting TMDL calculation\n")
-  cat("Lake type:", current_lake_type, "\n")
-  cat("Criteria:", paste(names(criteria), criteria, sep="=", collapse=", "), "\n")
-  cat("CHLAC target:", chlac_target, "\n")
-  cat("Impaired nutrients:", paste(input$impaired_nutrients, collapse=", "), "\n")
-  cat("Reduction scenario:", input$reduction_scenario, "\n")
-  
   # Execute TMDL calculation
   tryCatch({
     if (input$regression_type == "single") {
-      filtered_data <- data %>% filter(wbid == input$reg_wbid)
+      # IMPORTANT: Apply the same year filter used in regression
+      filtered_data <- data %>% 
+        filter(wbid == input$reg_wbid, 
+               year >= input$start_year, 
+               year <= input$end_year)
       
       # Validate data
       if (nrow(filtered_data) == 0) {
-        showNotification("No data available for the selected WBID.", type = "error", duration = 10)
+        showNotification("No data available for the selected WBID and year range.", type = "error", duration = 10)
         return()
       }
       
-      cat("Single WBID calculation for:", input$reg_wbid, "\n")
-      cat("Number of data rows:", nrow(filtered_data), "\n")
-      
-      # Calculate TMDL
+      # Calculate TMDL (passing the filtered data)
       tmdl <- calculate_tmdl_single(
         data = filtered_data,
         reg_results = reg_results,
@@ -2619,30 +2612,9 @@ observeEvent(input$calculate_tmdl, {
       tmdl$criteria <- criteria
       tmdl_results(tmdl)
       
-      # Show warning if targets were capped
-      if (any(unlist(tmdl$capped))) {
-        showNotification("Some target concentrations were capped at minimum values due to unrealistically low calculated targets.", 
-                         type = "warning", duration = 10)
-      }
-      
-      # Show warning for custom scenario if target not met
-      if (input$reduction_scenario == "custom") {
-        predicted_chlac <- tmdl$predicted_chlac
-        if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
-          showNotification(paste0("Custom reductions do not meet CHLAC target of ", 
-                                  round(chlac_target, 2), ". Predicted CHLAC is ", 
-                                  round(predicted_chlac, 2), "."), 
-                           type = "warning", duration = 10)
-        }
-      }
-      
-      cat("TMDL calculation successful\n")
-      
     } else {
-      # Multiple WBIDs handling
-      cat("Multiple WBIDs calculation\n")
+      # Multiple WBIDs handling - filter for the same year range
       selected_wbids <- selected_wbids_for_regression()
-      cat("Selected WBIDs:", paste(selected_wbids, collapse=", "), "\n")
       
       # Validate WBIDs
       if (length(selected_wbids) == 0) {
@@ -2650,81 +2622,68 @@ observeEvent(input$calculate_tmdl, {
         return()
       }
       
-      # Track capped warnings across all WBIDs
+      # Track warnings
       any_capped <- FALSE
       any_custom_warnings <- FALSE
       
-      # Process each WBID
-      # In your TMDL calculation for multiple WBIDs:
+      # Process each WBID - with year filtering
       tmdl_results_list <- lapply(selected_wbids, function(wbid) {
-        tryCatch({
-          cat("Processing TMDL for WBID:", wbid, "\n")
-          # Get data for this WBID
-          wbid_data <- data %>% dplyr::filter(wbid == !!wbid)
-          
-          if (nrow(wbid_data) == 0) {
-            cat("No data for WBID:", wbid, "\n")
-            return(NULL)
-          }
-          
-          # Use the GLOBAL regression model for all WBIDs, not individual models
-          tmdl <- calculate_tmdl_single(
-            data = wbid_data,
-            reg_results = reg_results,  # This uses the combined regression model
-            chlac_target = chlac_target,
-            impaired_nutrients = input$impaired_nutrients,
-            lake_criteria = criteria,
-            use_paleo_tp = input$use_paleo_tp,
-            tp_paleo = as.numeric(input$tp_paleo),
-            reduction_scenario = input$reduction_scenario,
-            custom_tn_reduction = input$custom_tn_reduction,
-            custom_tp_reduction = input$custom_tp_reduction
-          )
-          
-          # Track if any values were capped
-          if (any(unlist(tmdl$capped))) {
-            any_capped <<- TRUE
-          }
-          
-          # Track custom scenario warnings
-          if (input$reduction_scenario == "custom") {
-            predicted_chlac <- tmdl$predicted_chlac
-            if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
-              any_custom_warnings <<- TRUE
-            }
-          }
-          
-          # Format results for table
-          list(
-            WBID = wbid,
-            Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
-            Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
-            Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
-            Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
-            Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
-            Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
-            Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
-            TN_Capped = tmdl$capped$TN,
-            TP_Capped = tmdl$capped$TP
-          )
-        }, error = function(e) {
-          cat("Error processing WBID", wbid, ":", e$message, "\n")
+        # Apply the same year filter for each WBID
+        wbid_data <- data %>% 
+          dplyr::filter(wbid == !!wbid,
+                        year >= input$start_year, 
+                        year <= input$end_year)
+        
+        if (nrow(wbid_data) == 0) {
           return(NULL)
-        })
+        }
+        
+        # Calculate TMDL for this WBID
+        tmdl <- calculate_tmdl_single(
+          data = wbid_data,
+          reg_results = reg_results,
+          chlac_target = chlac_target,
+          impaired_nutrients = input$impaired_nutrients,
+          lake_criteria = criteria,
+          use_paleo_tp = input$use_paleo_tp,
+          tp_paleo = as.numeric(input$tp_paleo),
+          reduction_scenario = input$reduction_scenario,
+          custom_tn_reduction = input$custom_tn_reduction,
+          custom_tp_reduction = input$custom_tp_reduction
+        )
+        
+        # Track warnings
+        if (any(unlist(tmdl$capped))) {
+          any_capped <<- TRUE
+        }
+        
+        if (input$reduction_scenario == "custom") {
+          predicted_chlac <- tmdl$predicted_chlac
+          if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
+            any_custom_warnings <<- TRUE
+          }
+        }
+        
+        # Format results
+        list(
+          WBID = wbid,
+          Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
+          Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
+          Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
+          Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
+          Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
+          Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
+          Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
+          TN_Capped = tmdl$capped$TN,
+          TP_Capped = tmdl$capped$TP
+        )
       })
       
-      # Filter out NULL results FIRST, before trying to use valid_results
+      # Filter valid results
       valid_results <- Filter(Negate(is.null), tmdl_results_list)
       
-      # Debug the results AFTER defining valid_results
-      cat("Valid TMDL results:", length(valid_results), "\n")
-      if (length(valid_results) > 0) {
-        cat("First result sample:", paste(names(valid_results[[1]]), collapse=", "), "\n")
-      }
-      
-      # Validate results
       if (length(valid_results) == 0) {
-        showNotification("No valid data for the selected WBIDs.", type = "error", duration = 10)
+        showNotification("No valid data for the selected WBIDs and year range.", type = "error", duration = 10)
         return()
       }
       
@@ -2736,11 +2695,9 @@ observeEvent(input$calculate_tmdl, {
         reduction_scenario = input$reduction_scenario
       ))
       
-      showNotification(paste0("TMDL calculation completed for ", length(valid_results), " WBIDs."), type = "message")
-      
-      # Show warnings for multiple WBIDs if needed
+      # Show warnings
       if (any_capped) {
-        showNotification("Some target concentrations were capped at minimum values for one or more WBIDs.", 
+        showNotification("Some target concentrations were capped at minimum values.", 
                          type = "warning", duration = 10)
       }
       
@@ -2748,14 +2705,11 @@ observeEvent(input$calculate_tmdl, {
         showNotification("Custom reductions do not meet CHLAC target for one or more WBIDs.", 
                          type = "warning", duration = 10)
       }
-      
-      cat("TMDL calculation for multiple WBIDs completed successfully\n")
     }
     
     showNotification("TMDL calculation completed successfully.", type = "message")
   }, error = function(e) {
     showNotification(paste("TMDL calculation failed:", e$message), type = "error", duration = 10)
-    cat("TMDL Error:", e$message, "\n")
   })
 })
 
@@ -3024,34 +2978,61 @@ output$tmdl_summary <- renderUI({
   }
 })
 
+
+
 # Improved TMDL plot
 output$tmdl_plot <- renderPlotly({
-  req(tmdl_results(), regression_results(), results())
-  data <- results()$geomeans
+  req(tmdl_results(), regression_results())
+  
+  # Get regression data and results
+  reg_results <- regression_results()
   tmdl <- tmdl_results()
   
+  # Use the filtered data from regression (already filtered by WBID, year range, etc.)
+  plot_data <- reg_results$data
+  
+  # Debug output to verify data
+  cat("TMDL plot data points:", nrow(plot_data), "\n")
+  if ("year" %in% colnames(plot_data)) {
+    cat("Year range:", min(plot_data$year, na.rm = TRUE), "to", max(plot_data$year, na.rm = TRUE), "\n")
+  } else {
+    cat("Year column not found in plot_data\n")
+  }
+  
+  # Get  Validate plot_data
+  if (is.null(plot_data) || nrow(plot_data) == 0) {
+    return(plot_ly() %>%
+             add_annotations(
+               text = "No data available for plotting.",
+               showarrow = FALSE,
+               font = list(size = 16)
+             ))
+  }
+  
+  # Get the CHLAC target value
+  chlac_target_value <- if (!is.null(input$chlac_target) && input$chlac_target > 0) {
+    input$chlac_target
+  } else if (!is.null(tmdl$criteria) && !is.null(tmdl$criteria$CHLAC)) {
+    tmdl$criteria$CHLAC
+  } else {
+    NA
+  }
+  
+  # Generate plots for each impaired nutrient
   plots <- lapply(input$impaired_nutrients, function(nutrient) {
-    if (input$regression_type == "single") {
-      target_value <- tmdl$target_conc[[nutrient]] %||% NA
-      plot_data <- data %>% filter(wbid == input$reg_wbid)
-    } else {
-      target_value <- NA  # No single target for multiple WBIDs
-      plot_data <- data %>% filter(wbid %in% selected_wbids_for_regression())
-    }
-    
-    # Check if we have the required data
-    if (!all(c(nutrient, "CHLAC") %in% colnames(plot_data))) {
-      return(plot_ly() %>% 
+    # Verify the nutrient column exists in the data
+    if (!nutrient %in% colnames(plot_data)) {
+      return(plot_ly() %>%
                add_annotations(
-                 text = paste("Missing required columns:", paste(setdiff(c(nutrient, "CHLAC"), colnames(plot_data)), collapse=", ")),
+                 text = paste("Nutrient column", nutrient, "not found in regression data"),
                  showarrow = FALSE,
                  font = list(size = 16)
                ))
     }
     
-    # Check if we have valid numeric data
-    if (all(is.na(plot_data[[nutrient]])) || all(is.na(plot_data[["CHLAC"]]))) {
-      return(plot_ly() %>% 
+    # Check for valid data
+    if (all(is.na(plot_data[[nutrient]])) || all(is.na(plot_data$CHLAC))) {
+      return(plot_ly() %>%
                add_annotations(
                  text = paste("No valid data for", nutrient, "or CHLAC"),
                  showarrow = FALSE,
@@ -3059,44 +3040,76 @@ output$tmdl_plot <- renderPlotly({
                ))
     }
     
-    # Get CHLAC target for plotting
-    chlac_target_value <- if(!is.null(input$chlac_target) && input$chlac_target > 0) {
-      input$chlac_target
-    } else if(!is.null(tmdl$criteria) && !is.null(tmdl$criteria$CHLAC)) {
-      tmdl$criteria$CHLAC
+    # Get the target concentration if available (single WBID mode only)
+    target_value <- if (input$regression_type == "single" && !is.null(tmdl$target_conc)) {
+      tmdl$target_conc[[nutrient]] %||% NA
     } else {
       NA
     }
     
+    # Create base ggplot
     p <- ggplot(plot_data, aes_string(x = nutrient, y = "CHLAC")) +
-      geom_point(alpha = 0.6) +
+      geom_point(alpha = 0.6, size = 2) +
       geom_smooth(method = "lm", formula = y ~ x, se = input$show_confidence, color = "blue") +
-      labs(title = paste("TMDL Analysis for", nutrient),
-           x = paste(nutrient, "(mg/L)"), y = "CHLAC (µg/L)") +
-      theme_minimal()
+      labs(
+        title = paste("TMDL Analysis:", nutrient, "vs CHLAC"),
+        subtitle = if ("year" %in% colnames(plot_data)) {
+          paste("Years:", min(plot_data$year, na.rm = TRUE), "to", max(plot_data$year, na.rm = TRUE))
+        } else {
+          "All Years"
+        },
+        x = paste(nutrient, "(mg/L)"),
+        y = "CHLAC (µg/L)"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        axis.title = element_text(size = 12)
+      )
     
+    # Add WBID coloring for multiple WBIDs
+    if (input$regression_type == "multiple" && "wbid" %in% colnames(plot_data)) {
+      p <- p + aes(color = factor(wbid)) +
+        labs(color = "WBID")
+    }
+    
+    # Add target lines if requested
     if (input$show_target_lines) {
-      # Add horizontal line for CHLAC target if available
       if (!is.na(chlac_target_value)) {
-        p <- p + geom_hline(yintercept = chlac_target_value, linetype = "dashed", color = "red")
+        p <- p + 
+          geom_hline(yintercept = chlac_target_value, linetype = "dashed", color = "red") +
+          annotate("text", 
+                   x = min(plot_data[[nutrient]], na.rm = TRUE), 
+                   y = chlac_target_value, 
+                   label = sprintf("CHLAC Target: %.1f", chlac_target_value),
+                   hjust = 0, vjust = -0.5, color = "red", size = 4)
       }
       
-      # Add vertical line for nutrient target if available
       if (!is.na(target_value)) {
         max_y <- max(plot_data$CHLAC, na.rm = TRUE)
         p <- p + 
           geom_vline(xintercept = target_value, linetype = "dashed", color = "blue") +
-          annotate("text", x = target_value, y = max_y, 
-                   label = sprintf("Target %s: %.3f", nutrient, target_value), 
-                   vjust = -1, color = "blue")
+          annotate("text", 
+                   x = target_value, 
+                   y = max_y * 0.95, 
+                   label = sprintf("Target %s: %.3f", nutrient, target_value),
+                   hjust = 1, vjust = 1, color = "blue", size = 4)
       }
     }
     
-    ggplotly(p)
+    # Convert to plotly with improved layout
+    ggplotly(p, tooltip = c(nutrient, "CHLAC", if (input$regression_type == "multiple") "wbid" else NULL)) %>%
+      layout(
+        margin = list(t = 80, r = 20, b = 60, l = 60),
+        hovermode = "closest",
+        legend = list(orientation = "h", y = -0.2, x = 0.5, xanchor = "center")
+      )
   })
   
+  # Handle case where no plots are generated
   if (length(plots) == 0) {
-    return(plot_ly() %>% 
+    return(plot_ly() %>%
              add_annotations(
                text = "No impaired nutrients selected for plotting",
                showarrow = FALSE,
@@ -3104,8 +3117,19 @@ output$tmdl_plot <- renderPlotly({
              ))
   }
   
+  # Combine plots into a subplot
   subplot(plots, nrows = 1, shareY = TRUE, titleX = TRUE) %>%
-    layout(height = 600, showlegend = FALSE)
+    layout(
+      height = 600,
+      showlegend = (input$regression_type == "multiple"),
+      title = list(
+        text = "TMDL Analysis Plots",
+        y = 0.99,
+        x = 0.5,
+        xanchor = "center",
+        font = list(size = 16)
+      )
+    )
 })
 
 # Add TMDL Results Table for Multiple WBIDs
@@ -3434,14 +3458,13 @@ output$tmdl_instructions <- renderUI({
 
 # Main TMDL calculation logic
 observeEvent(input$calculate_tmdl, {
-  # Check if data has been extracted yet
+  # Check prerequisites
   if (is.null(results()) || is.null(results()$geomeans) || nrow(results()$geomeans) == 0) {
     showNotification("Please extract data in the Data Extraction tab before calculating TMDL.", 
                      type = "warning", duration = 10)
     return()
   }
   
-  # Check if regression has been run
   if (is.null(regression_results())) {
     showNotification("Please run a regression analysis in the Regression Analysis tab before calculating TMDL.", 
                      type = "warning", duration = 10)
@@ -3469,7 +3492,6 @@ observeEvent(input$calculate_tmdl, {
     "3" = list(CHLAC = 6, TP = 0.01, TN = 0.51)
   )[[as.character(current_lake_type)]]
   
-  # Validate criteria
   if (is.null(criteria)) {
     showNotification(paste("Invalid lake type:", current_lake_type), type = "error", duration = 10)
     return()
@@ -3494,25 +3516,25 @@ observeEvent(input$calculate_tmdl, {
   
   # Log start of TMDL calculation
   cat("Starting TMDL calculation\n")
-  cat("Lake type:", current_lake_type, "\n")
-  cat("Criteria:", paste(names(criteria),criteria, sep="=", collapse=", "), "\n")
-  cat("CHLAC target:", chlac_target, "\n")
-  cat("Impaired nutrients:", paste(input$impaired_nutrients, collapse=", "), "\n")
-  cat("Reduction scenario:", input$reduction_scenario, "\n")
+  cat("Year range:", input$start_year, "to", input$end_year, "\n")
   
   # Execute TMDL calculation
   tryCatch({
     if (input$regression_type == "single") {
-      filtered_data <- data %>% filter(wbid == input$reg_wbid)
+      # Apply year filter consistent with regression
+      filtered_data <- data %>% 
+        filter(wbid == input$reg_wbid, 
+               year >= input$start_year, 
+               year <= input$end_year)
       
       # Validate data
       if (nrow(filtered_data) == 0) {
-        showNotification("No data available for the selected WBID.", type = "error", duration = 10)
+        showNotification("No data available for the selected WBID and year range.", type = "error", duration = 10)
         return()
       }
       
       cat("Single WBID calculation for:", input$reg_wbid, "\n")
-      cat("Number of data rows:", nrow(filtered_data), "\n")
+      cat("Number of data rows after filtering:", nrow(filtered_data), "\n")
       
       # Calculate TMDL
       tmdl <- calculate_tmdl_single(
@@ -3533,108 +3555,88 @@ observeEvent(input$calculate_tmdl, {
       tmdl$criteria <- criteria
       tmdl_results(tmdl)
       
-      # Show warning if targets were capped
+      # Show warnings
       if (any(unlist(tmdl$capped))) {
-        showNotification("Some target concentrations were capped at minimum values due to unrealistically low calculated targets.", 
+        showNotification("Some target concentrations were capped at minimum values.", 
+                         type = "warning", duration = 10)
+      }
+      if (input$reduction_scenario == "custom" && !is.na(tmdl$predicted_chlac) && 
+          tmdl$predicted_chlac > chlac_target) {
+        showNotification(paste0("Custom reductions do not meet CHLAC target of ", 
+                                round(chlac_target, 2), ". Predicted CHLAC is ", 
+                                round(tmdl$predicted_chlac, 2), "."), 
                          type = "warning", duration = 10)
       }
       
-      # Show warning for custom scenario if target not met
-      if (input$reduction_scenario == "custom") {
-        predicted_chlac <- tmdl$predicted_chlac
-        if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
-          showNotification(paste0("Custom reductions do not meet CHLAC target of ", 
-                                  round(chlac_target, 2), ". Predicted CHLAC is ", 
-                                  round(predicted_chlac, 2), "."), 
-                           type = "warning", duration = 10)
-        }
-      }
-      
-      cat("TMDL calculation successful\n")
-      
     } else {
       # Multiple WBIDs handling
-      cat("Multiple WBIDs calculation\n")
       selected_wbids <- selected_wbids_for_regression()
-      cat("Selected WBIDs:", paste(selected_wbids, collapse=", "), "\n")
       
-      # Validate WBIDs
       if (length(selected_wbids) == 0) {
         showNotification("No WBIDs selected for analysis.", type = "error", duration = 10)
         return()
       }
       
-      # Track capped warnings across all WBIDs
       any_capped <- FALSE
       any_custom_warnings <- FALSE
       
-      # Process each WBID
       tmdl_results_list <- lapply(selected_wbids, function(wbid) {
-        tryCatch({
-          cat("Processing WBID:", wbid, "\n")
-          wbid_data <- data %>% dplyr::filter(wbid == !!wbid)
-          
-          if (nrow(wbid_data) == 0) {
-            cat("No data for WBID:", wbid, "\n")
-            return(NULL)
-          }
-          
-          # Calculate TMDL for this WBID
-          tmdl <- calculate_tmdl_single(
-            data = wbid_data,
-            reg_results = reg_results,
-            chlac_target = chlac_target,
-            impaired_nutrients = input$impaired_nutrients,
-            lake_criteria = criteria,
-            use_paleo_tp = input$use_paleo_tp,
-            tp_paleo = as.numeric(input$tp_paleo),
-            reduction_scenario = input$reduction_scenario,
-            custom_tn_reduction = input$custom_tn_reduction,
-            custom_tp_reduction = input$custom_tp_reduction
-          )
-          
-          # Track if any values were capped
-          if (any(unlist(tmdl$capped))) {
-            any_capped <<- TRUE
-          }
-          
-          # Track custom scenario warnings
-          if (input$reduction_scenario == "custom") {
-            predicted_chlac <- tmdl$predicted_chlac
-            if (!is.na(predicted_chlac) && predicted_chlac > chlac_target) {
-              any_custom_warnings <<- TRUE
-            }
-          }
-          
-          # Format results with current AGM
-          list(
-            WBID = wbid,
-            Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
-            Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
-            Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
-            Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
-            Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
-            Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
-            Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
-            TN_Capped = tmdl$capped$TN,
-            TP_Capped = tmdl$capped$TP
-          )
-        }, error = function(e) {
-          cat("Error processing WBID", wbid, ":", e$message, "\n")
+        # Apply year filter consistent with regression
+        wbid_data <- data %>% 
+          dplyr::filter(wbid == !!wbid,
+                        year >= input$start_year, 
+                        year <= input$end_year)
+        
+        if (nrow(wbid_data) == 0) {
+          cat("No data for WBID:", wbid, "in year range\n")
           return(NULL)
-        })
+        }
+        
+        # Calculate TMDL for this WBID
+        tmdl <- calculate_tmdl_single(
+          data = wbid_data,
+          reg_results = reg_results,
+          chlac_target = chlac_target,
+          impaired_nutrients = input$impaired_nutrients,
+          lake_criteria = criteria,
+          use_paleo_tp = input$use_paleo_tp,
+          tp_paleo = as.numeric(input$tp_paleo),
+          reduction_scenario = input$reduction_scenario,
+          custom_tn_reduction = input$custom_tn_reduction,
+          custom_tp_reduction = input$custom_tp_reduction
+        )
+        
+        # Track warnings
+        if (any(unlist(tmdl$capped))) {
+          any_capped <<- TRUE
+        }
+        if (input$reduction_scenario == "custom" && !is.na(tmdl$predicted_chlac) && 
+            tmdl$predicted_chlac > chlac_target) {
+          any_custom_warnings <<- TRUE
+        }
+        
+        # Format results
+        list(
+          WBID = wbid,
+          Current_TN = safe_display(max(wbid_data$TN, na.rm = TRUE), "N/A", 3),
+          Current_TP = safe_display(max(wbid_data$TP, na.rm = TRUE), "N/A", 3),
+          Target_TN = safe_display(tmdl$target_conc$TN, "N/A", 3),
+          Target_TP = safe_display(tmdl$target_conc$TP, "N/A", 3),
+          Percent_Reduction_TN = safe_display(tmdl$percent_reduction$TN, "N/A", 1),
+          Percent_Reduction_TP = safe_display(tmdl$percent_reduction$TP, "N/A", 1),
+          Predicted_CHLAC = safe_display(tmdl$predicted_chlac, "N/A", 2),
+          TN_Capped = tmdl$capped$TN,
+          TP_Capped = tmdl$capped$TP
+        )
       })
       
-      # Filter out NULL results
       valid_results <- Filter(Negate(is.null), tmdl_results_list)
       
-      # Validate results
       if (length(valid_results) == 0) {
-        showNotification("No valid data for the selected WBIDs.", type = "error", duration = 10)
+        showNotification("No valid data for the selected WBIDs and year range.", type = "error", duration = 10)
         return()
       }
       
-      # Store results
       tmdl_results(list(
         results = valid_results,
         lake_type = current_lake_type,
@@ -3642,18 +3644,14 @@ observeEvent(input$calculate_tmdl, {
         reduction_scenario = input$reduction_scenario
       ))
       
-      # Show warnings for multiple WBIDs if needed
       if (any_capped) {
-        showNotification("Some target concentrations were capped at minimum values for one or more WBIDs.", 
+        showNotification("Some target concentrations were capped at minimum values.", 
                          type = "warning", duration = 10)
       }
-      
       if (any_custom_warnings) {
         showNotification("Custom reductions do not meet CHLAC target for one or more WBIDs.", 
                          type = "warning", duration = 10)
       }
-      
-      cat("TMDL calculation for multiple WBIDs completed successfully\n")
     }
     
     showNotification("TMDL calculation completed successfully.", type = "message")
