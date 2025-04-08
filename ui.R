@@ -24,13 +24,11 @@ ui <- dashboardPage(
     width = 300,
     sidebarMenu(
       menuItem("Home", tabName = "main_page", icon = icon("home")),
-      # Analysis Tools - all as separate menu items
       menuItem("Waterbody Explorer", tabName = "data_extraction", icon = icon("water")),
       menuItem("Data Visualization", tabName = "visualization", icon = icon("chart-bar")),
       menuItem("Trend Analysis", tabName = "trend_analysis", icon = icon("chart-area")),
       menuItem("Geospatial Analysis", tabName = "geospatial_analysis", icon = icon("map")),
       menuItem("Regression Analysis", tabName = "regression_analysis", icon = icon("chart-line")),
-      # Information items - all as separate menu items
       menuItem("About", tabName = "about", icon = icon("info")),
       menuItem("Contact", tabName = "contact", icon = icon("envelope"))
     )
