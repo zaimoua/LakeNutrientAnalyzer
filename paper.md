@@ -51,10 +51,9 @@ To demonstrate, we analyze Lake Wales (WBID 1619A), with an established TMDL [@F
 CHLAC = 32.940 * TN - 12.130
 ```
 
-
 This model (p < 0.0001) predicts chlorophyll-a at the target TN (0.975 mg/L) within [8.26, 31.74] μg/L (95% prediction interval). To meet the 20 μg/L chlorophyll-a criterion, the app calculates a 40.6% TN reduction (from 1.642 mg/L to 0.975 mg/L) and a 19.2% TP reduction (from 0.037 mg/L to 0.03 mg/L). These align closely with FDEP’s TMDL (0.98 mg/L TN, 40% reduction; 0.03 mg/L TP) [@FDEP2020], validating the app’s accuracy. The app also supports TMDL development by simulating stricter scenarios (e.g., 15 μg/L chlorophyll-a requires a 50.7% TN reduction to 0.81 mg/L).
 
-*Figure 1: TMDL interface for Lake Wales, showing nutrient targets, reductions, and regression outputs.* [figures/tmdl_calculation.png]
+*Figure 1: Regression results for Lake Wales, showing the relationship between total nitrogen (TN) and chlorophyll-a with the fitted model and prediction intervals.* [figures/regression_results.png]
 
 This example highlights the app’s efficiency in verifying TMDLs and its flexibility for developing new targets, aiding adaptive lake management.
 
