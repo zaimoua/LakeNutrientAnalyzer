@@ -162,7 +162,7 @@ Installed via `install_packages.R`:
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request or open an Issue for bugs or feature requests.
+Contributions are welcome via GitHub issues or pull requests, as detailed in [CONTRIBUTING.md](https://github.com/zaimoua/LakeNutrientAnalyzer/blob/main/CONTRIBUTING.md). Users can contact the author for support or feedback.
 
 ## License
 
