@@ -170,7 +170,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Disclaimer
 
-This app was developed by Zaim Ouazzani as a personal project, independent of any affiliation with the Florida Department of Environmental Protection (FDEP). It was shared informally with FDEP staff as a personal endeavor and is not an official FDEP product, nor does it represent the agency’s views, tools, or endorsement. The app uses publicly available Impaired Waters Rule (IWR) data from the Florida DEP, in compliance with the agency’s data usage policy. For official FDEP tools or data, contact the agency at https://floridadep.gov.
+This app was developed by Zaim Ouazzani as a personal project, independent of any affiliation with the Florida Department of Environmental Protection (FDEP). It is not an official FDEP product, nor does it represent the agency’s views, tools, or endorsement. The app uses publicly available Impaired Waters Rule (IWR) data from the Florida DEP, in compliance with the agency’s data usage policy. For official FDEP tools or data, contact the agency at https://floridadep.gov.
 
 ## Acknowledgments
 
