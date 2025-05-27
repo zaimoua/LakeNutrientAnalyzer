@@ -64,7 +64,7 @@ The *Florida Lake Nutrient Analyser* enables rapid, data-driven decisions. For e
 
 # Availability and Implementation
 
-The app is hosted on GitHub at [https://github.com/zaimoua/LakeNutrientAnalyzer](https://github.com/zaimoua/LakeNutrientAnalyzer) under the MIT License, with a Zenodo archive at [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX). A demo is available at [https://tmdl.shinyapps.io/LakeNutrientAnalyzer/](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/). The IWR Run 66 database is downloadable from [https://publicfiles.dep.state.fl.us/dear/IWR/](https://publicfiles.dep.state.fl.us/dear/IWR/). Installation instructions, data preparation scripts (`install_database.R`), and troubleshooting guides are in the README.
+The app is hosted on GitHub at [https://github.com/zaimoua/LakeNutrientAnalyzer](https://github.com/zaimoua/LakeNutrientAnalyzer) under the MIT License. A demo is available at [https://tmdl.shinyapps.io/LakeNutrientAnalyzer/](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/). The IWR Run 66 database is downloadable from [https://publicfiles.dep.state.fl.us/dear/IWR/](https://publicfiles.dep.state.fl.us/dear/IWR/). Installation instructions, data preparation scripts (`install_database.R`), and troubleshooting guides are in the README.
 
 **System Requirements**:
 - R version 4.0.0 or higher
@@ -74,7 +74,7 @@ The app is hosted on GitHub at [https://github.com/zaimoua/LakeNutrientAnalyzer]
 
 # Disclaimer
 
-This app was developed by Zaim Ouazzani as a personal project, independent of any affiliation with the Florida Department of Environmental Protection (FDEP). It was shared informally with FDEP staff as a personal endeavor and is not an official FDEP product, nor does it represent the agency’s views, tools, or endorsement. The app uses publicly available Impaired Waters Rule (IWR) data from the FDEP, in compliance with the agency’s data usage policy. For official FDEP tools or data, contact the agency at [https://floridadep.gov](https://floridadep.gov).
+This app was developed by Zaim Ouazzani as a personal project, independent of any affiliation with the Florida Department of Environmental Protection (FDEP). It is not an official FDEP product, nor does it represent the agency’s views, tools, or endorsement. The app uses publicly available Impaired Waters Rule (IWR) data from the FDEP. For official FDEP tools or data, contact the agency at [https://floridadep.gov](https://floridadep.gov).
 
 # Community Guidelines
 
