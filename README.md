@@ -179,4 +179,4 @@ This app was developed by Zaim Ouazzani as a personal project, independent of an
 
 ---
 
-Version: 1.0.0 (Last Updated: March 27, 2025)
+Version: 1.0.0 (Last Updated: May 27, 2025)
