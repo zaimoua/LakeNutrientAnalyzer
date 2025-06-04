@@ -28,7 +28,7 @@ The *Florida Lake Nutrient Analyzer* is an open-source Shiny application built i
 
 # Statement of Need
 
-Nutrient pollution in Florida’s 30,000+ lakes, driven by agriculture, urban development, and stormwater runoff, threatens ecosystems and public health. Effective management requires tools to rapidly assess nutrient levels and develop TMDLs, regulatory limits on pollutant loads to restore impaired waters [@FDEP2020]. However, challenges like data complexity, fragmented workflows, and limited tool accessibility often delay TMDL implementation. Existing tools, such as the Chesapeake Assessment Scenario Tool (CAST) [@ChesapeakeBay2025], focus on watershed-scale modeling, while EPA’s Water Quality Analysis Simulation Program (WASP) and AQUATOX models [@EPA2025a; @EPA2025b] require significant expertise. The EPA Nutrient Explorer [@Pennino2022] offers visualization but lacks integration with Florida’s IWR database and regulatory frameworks. 
+Nutrient pollution in Florida’s 30,000+ lakes, driven by agriculture, urban development, and stormwater runoff, threatens ecosystems and public health. Effective management requires tools to rapidly assess nutrient levels and develop TMDLs, regulatory limits on pollutant loads to restore impaired waters [@FDEP2020]. However, challenges like data complexity, fragmented workflows, and limited tool accessibility often delay TMDL implementation. Existing tools, such as the Chesapeake Assessment Scenario Tool (CAST) [@ChesapeakeBay2025], focus on watershed-scale modeling, while EPA’s Water Quality Analysis Simulation Program (WASP) model [@EPA2025] requires significant expertise. The EPA Nutrient Explorer [@Pennino2023] offers visualization but lacks integration with Florida’s IWR database and regulatory frameworks. 
 
 The *Florida Lake Nutrient Analyzer* addresses these gaps by providing:
 1. Direct access to Florida’s IWR database for lake-specific nutrient data.
@@ -93,7 +93,7 @@ Thanks to the FDEP for providing public IWR data and to the R and Shiny communit
 
 # References
 
-- [@FDEP2020]: Florida Department of Environmental Protection. "TMDL Report: Lake Wales," 2020.
+- [@FDEP2020]: Florida Department of Environmental Protection. "Nutrient TMDLs for Lake Wales (WBID 1619A) and Documentation in Support of the Development of Site-Specific Numeric Interpretations of the Narrative Nutrient Criterion," 2020.
 - [@ChesapeakeBay2025]: Chesapeake Bay Program. "Chesapeake Assessment Scenario Tool (CAST)," 2025.
-- [@EPA2025]: U.S. EPA. "WASP and AQUATOX: Modeling Tools," 2025.
-- [@Pennino2022]: Pennino, M. J. "EPA Nutrient Explorer." *Water Resources Research*, 2022.
+- [@EPA2025]: U.S. Environmental Protection Agency. "Water Quality Analysis Simulation Program (WASP)," 2025.
+- [@Pennino2023]: Pennino, Michael J., Fry, Meridith M., Sabo, Robert D., and Carleton, James N. "Nutrient Explorer: An analytical framework to visualize and investigate drivers of surface water quality." *Environmental Modelling & Software*, 2023.
