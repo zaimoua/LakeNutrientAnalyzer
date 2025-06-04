@@ -22,9 +22,13 @@ bibliography: paper.bib
 
 The *Florida Lake Nutrient Analyzer* is an open-source Shiny application built in R to streamline nutrient analysis, impairment assessment, and Total Maximum Daily Load (TMDL) development for Florida lakes using the Florida Department of Environmental Protection’s (FDEP) publicly available Impaired Waters Rule (IWR) dataset. Designed for water quality managers, environmental researchers, and policymakers, it integrates data extraction, interactive visualization, statistical analysis, and geospatial tools into a user-friendly platform. The app automates tasks such as retrieving water quality data by Waterbody Identification (WBID), computing annual geometric means, evaluating compliance with Florida’s Numeric Nutrient Criteria, and modeling nutrient relationships for TMDL targets, reducing analysis time from weeks to minutes. Its transparent, reproducible workflows enhance accessibility for non-specialists while supporting regulatory compliance.
 
+# Summary
+
+The *Florida Lake Nutrient Analyzer* is an open-source Shiny application built in R to streamline nutrient analysis, impairment assessment, and Total Maximum Daily Load (TMDL) development for Florida lakes using the Florida Department of Environmental Protection’s (FDEP) publicly available Impaired Waters Rule (IWR) dataset. Designed for water quality managers, environmental researchers, and policymakers, it integrates data extraction, interactive visualization, statistical analysis, and geospatial tools into a user-friendly platform. The app automates tasks such as retrieving water quality data by Waterbody Identification (WBID), computing annual geometric means, evaluating compliance with Florida’s Numeric Nutrient Criteria, and modeling nutrient relationships for TMDL targets, reducing analysis time from weeks to minutes. Its transparent, reproducible workflows enhance accessibility for non-specialists while supporting regulatory compliance.
+
 # Statement of Need
 
-Nutrient pollution in Florida’s 30,000+ lakes, driven by agriculture, urban development, and stormwater runoff, threatens ecosystems and public health. Effective management requires tools to rapidly assess nutrient levels and develop TMDLs, regulatory limits on pollutant loads to restore impaired waters [@Smith2023]. However, challenges like data complexity, fragmented workflows, and limited tool accessibility often delay TMDL implementation [@FDEP2020]. Existing tools, such as the Chesapeake Assessment Scenario Tool (CAST) [@ChesapeakeBay2025], focus on watershed-scale modeling, while EPA’s Water Quality Analysis Simulation Program (WASP) [@EPA2025] requires significant expertise. The EPA Nutrient Explorer [@Pennino2022] offers visualization but lacks integration with Florida’s IWR database and regulatory frameworks. 
+Nutrient pollution in Florida’s 30,000+ lakes, driven by agriculture, urban development, and stormwater runoff, threatens ecosystems and public health. Effective management requires tools to rapidly assess nutrient levels and develop TMDLs, regulatory limits on pollutant loads to restore impaired waters [@FDEP2020]. However, challenges like data complexity, fragmented workflows, and limited tool accessibility often delay TMDL implementation. Existing tools, such as the Chesapeake Assessment Scenario Tool (CAST) [@ChesapeakeBay2025], focus on watershed-scale modeling, while EPA’s Water Quality Analysis Simulation Program (WASP) and AQUATOX models [@EPA2025a; @EPA2025b] require significant expertise. The EPA Nutrient Explorer [@Pennino2022] offers visualization but lacks integration with Florida’s IWR database and regulatory frameworks. 
 
 The *Florida Lake Nutrient Analyzer* addresses these gaps by providing:
 1. Direct access to Florida’s IWR database for lake-specific nutrient data.
@@ -90,7 +94,6 @@ Thanks to the FDEP for providing public IWR data and to the R and Shiny communit
 # References
 
 - [@FDEP2020]: Florida Department of Environmental Protection. "TMDL Report: Lake Wales," 2020.
-- [@Smith2023]: Smith, J. A review of challenges and opportunities in the EPA's TMDL program. *Environmental Management*, 2023.
 - [@ChesapeakeBay2025]: Chesapeake Bay Program. "Chesapeake Assessment Scenario Tool (CAST)," 2025.
 - [@EPA2025]: U.S. EPA. "WASP and AQUATOX: Modeling Tools," 2025.
 - [@Pennino2022]: Pennino, M. J. "EPA Nutrient Explorer." *Water Resources Research*, 2022.
