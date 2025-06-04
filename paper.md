@@ -10,8 +10,11 @@ tags:
 authors:
   - name: Zaim Ouazzani
     orcid: 0009-0002-4606-3501
-    affiliation: Independent Researcher
-date: 27 May 2025
+    affiliation: 1
+affiliations:
+  - name: Independent Researcher
+    index: 1
+date: 04 June 2025
 bibliography: paper.bib
 ---
 
