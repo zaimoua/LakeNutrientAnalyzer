@@ -57,17 +57,34 @@ Try the [online demo](https://tmdl.shinyapps.io/LakeNutrientAnalyzer/) to see th
 
 ## Database Setup
 
-The app requires the `IWR66_database.sqlite` database (from IWR Run 66, the latest update). You have two options:
+The app requires the Florida DEP Impaired Waters Rule (IWR) database in SQLite format. The app is designed to work with the latest available IWR run.
 
 ### Automated Processing
 
-1. First, download the original IWR database files from the [Florida DEP website](https://publicfiles.dep.state.fl.us/dear/IWR/)
-2. Run the included database conversion script:
+1. **Download the IWR database files** from the [Florida DEP website](https://publicfiles.dep.state.fl.us/dear/IWR/)
+   - Navigate to the most recent IWR run folder (e.g., IWR66, IWR67, etc.)
+   - Download the Access database files (.mdb or .accdb format)
+
+2. **Run the database conversion script:**
    ```r
    source("install_database.R")
    ```
-3. Follow the on-screen prompts to select the downloaded Access files and convert them
-4. Make sure the WaterbodyID_Table.csv file is in the data folder for filtering
+
+3. **Follow the conversion process:**
+   - The script will prompt you to select the downloaded Access files
+   - It will automatically convert them to SQLite format
+   - The resulting database will be named according to the IWR run (e.g., `IWR66_database.sqlite`)
+
+4. **Ensure required files are in place:**
+   - Verify the `WaterbodyID_Table.csv` file is in the `data/` folder
+   - This file is used for waterbody filtering and identification
+
+### Database Updates
+
+As Florida DEP releases new IWR runs, simply:
+1. Download the latest IWR database files
+2. Re-run the `install_database.R` script
+3. Update any hardcoded references to the database filename in your local configuration
 
 ## Running the App
 
