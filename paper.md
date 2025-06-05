@@ -22,10 +22,6 @@ bibliography: paper.bib
 
 The *Florida Lake Nutrient Analyzer* is an open-source Shiny application built in R to streamline nutrient analysis, impairment assessment, and Total Maximum Daily Load (TMDL) development for Florida lakes using the Florida Department of Environmental Protection’s (FDEP) publicly available Impaired Waters Rule (IWR) dataset. Designed for water quality managers, environmental researchers, and policymakers, it integrates data extraction, interactive visualization, statistical analysis, and geospatial tools into a user-friendly platform. The app automates tasks such as retrieving water quality data by Waterbody Identification (WBID), computing annual geometric means, evaluating compliance with Florida’s Numeric Nutrient Criteria, and modeling nutrient relationships for TMDL targets, reducing analysis time from weeks to minutes. Its transparent, reproducible workflows enhance accessibility for non-specialists while supporting regulatory compliance.
 
-# Summary
-
-The *Florida Lake Nutrient Analyzer* is an open-source Shiny application built in R to streamline nutrient analysis, impairment assessment, and Total Maximum Daily Load (TMDL) development for Florida lakes using the Florida Department of Environmental Protection’s (FDEP) publicly available Impaired Waters Rule (IWR) dataset. Designed for water quality managers, environmental researchers, and policymakers, it integrates data extraction, interactive visualization, statistical analysis, and geospatial tools into a user-friendly platform. The app automates tasks such as retrieving water quality data by Waterbody Identification (WBID), computing annual geometric means, evaluating compliance with Florida’s Numeric Nutrient Criteria, and modeling nutrient relationships for TMDL targets, reducing analysis time from weeks to minutes. Its transparent, reproducible workflows enhance accessibility for non-specialists while supporting regulatory compliance.
-
 # Statement of Need
 
 Nutrient pollution in Florida’s 30,000+ lakes, driven by agriculture, urban development, and stormwater runoff, threatens ecosystems and public health. Effective management requires tools to rapidly assess nutrient levels and develop TMDLs, regulatory limits on pollutant loads to restore impaired waters [@FDEP2020]. However, challenges like data complexity, fragmented workflows, and limited tool accessibility often delay TMDL implementation. Existing tools, such as the Chesapeake Assessment Scenario Tool (CAST) [@ChesapeakeBay2025], focus on watershed-scale modeling, while EPA’s Water Quality Analysis Simulation Program (WASP) model [@EPA2025] requires significant expertise. The EPA Nutrient Explorer [@Pennino2023] offers visualization but lacks integration with Florida’s IWR database and regulatory frameworks. 
@@ -60,8 +56,8 @@ CHLAC = 32.940 * TN - 12.130
 
 This model (p < 0.0001) predicts chlorophyll-a at the target TN (0.975 mg/L) within [8.26, 31.74] μg/L (95% prediction interval). To meet the 20 μg/L chlorophyll-a criterion, the app calculates a 40.6% TN reduction (from 1.642 mg/L to 0.975 mg/L) and a 19.2% TP reduction (from 0.037 mg/L to 0.03 mg/L). These align closely with FDEP’s TMDL (0.98 mg/L TN, 40% reduction; 0.03 mg/L TP) [@FDEP2020], validating the app’s accuracy. The app also supports TMDL development by simulating stricter scenarios (e.g., 15 μg/L chlorophyll-a requires a 50.7% TN reduction to 0.81 mg/L).
 
-*Figure 1: Regression results for Lake Wales, showing the relationship between total nitrogen (TN) and chlorophyll-a with the fitted model and prediction intervals.* 
-![Dashboard Screenshot](figures/regression_plot.png)
+*Figure 1: Regression analysis results for Lake Wales, showing the relationship between total nitrogen (TN) and chlorophyll-a with the fitted model and prediction intervals.* 
+![Regression Analysis Plot](figures/regression_plot.png)
 
 This example highlights the app’s efficiency in verifying TMDLs and its flexibility for developing new targets, aiding adaptive lake management.
 
